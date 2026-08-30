@@ -49,6 +49,30 @@ dsh-web start
 `start` prints the URL and password, returns to the shell, and pushes a card + password to your
 Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 
+## Install methods & version policy
+
+Nobody builds from source. `install.sh` picks the first available path:
+
+1. **Already on the system** (`caddy` / `cloudflared` in `PATH` — e.g. installed via brew or the
+   official apt repos) → used as-is, nothing downloaded.
+2. **Official prebuilt static binaries** → downloaded from cloudflared GitHub releases and
+   caddyserver.com's official build API (Caddy v2.11+ publishes no darwin assets on GitHub),
+   placed in `~/.remote-control/bin/`. No compiler involved, ever.
+
+**Versions follow upstream latest by default** — intentional: the tunnel client gets security
+fixes continuously and Cloudflare deprecates old cloudflared versions over time; our dependency
+surface is tiny (a few CLI flags + basic Caddyfile syntax), so upstream churn risk is low.
+For emergency rollback you can pin:
+
+```bash
+RC_CLOUDFLARED_VERSION=2026.8.2 scripts/install.sh   # GitHub release tag, both platforms
+RC_CADDY_VERSION=v2.11.4 scripts/install.sh          # linux only; darwin build API is latest-only
+```
+
+As a DSH plugin (M4): installation will become the ecosystem-standard
+`dsh plugin --profile web add dsh-remote-control` (a plain npm package — still no source builds);
+binary provisioning moves into the plugin's first start using the same logic.
+
 ## Commands
 
 | Command | Purpose |

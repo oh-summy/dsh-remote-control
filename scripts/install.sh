@@ -15,17 +15,29 @@ echo "[rc] 平台: $os-$arch"
 
 dl() { curl -fSL --retry 3 -m 300 -o "$2" "$1"; }
 
+# 版本策略：默认跟随上游 latest（安全修复优先，cloudflared 旧版会被
+# Cloudflare 逐步淘汰）；需要紧急回滚时用环境变量钉版：
+#   RC_CLOUDFLARED_VERSION=2026.8.2   （GitHub release tag，两平台通用）
+#   RC_CADDY_VERSION=v2.11.4          （仅 linux 的 GitHub release tag；
+#                                      darwin 走官方构建 API 只提供最新版）
+CFV="${RC_CLOUDFLARED_VERSION:-latest}"
+if [ "$CFV" = latest ]; then
+  CF_BASE="https://github.com/cloudflare/cloudflared/releases/latest/download"
+else
+  CF_BASE="https://github.com/cloudflare/cloudflared/releases/download/$CFV"
+fi
+
 # ---- cloudflared ----
 if [ -x "$BIN_DIR/cloudflared" ] || command -v cloudflared >/dev/null 2>&1; then
-  echo "[rc] cloudflared 已就绪"
+  echo "[rc] cloudflared 已就绪（$([ -x "$BIN_DIR/cloudflared" ] && echo "$BIN_DIR/cloudflared" || echo "系统 PATH")）"
 else
-  echo "[rc] 下载 cloudflared ($os-$arch) ..."
+  echo "[rc] 下载 cloudflared $CFV ($os-$arch) ..."
   if [ "$os" = darwin ]; then
-    dl "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-$os-$arch.tgz" "$BIN_DIR/cf.tgz"
+    dl "$CF_BASE/cloudflared-$os-$arch.tgz" "$BIN_DIR/cf.tgz"
     tar -xzf "$BIN_DIR/cf.tgz" -C "$BIN_DIR" cloudflared
     rm -f "$BIN_DIR/cf.tgz"
   else
-    dl "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-$os-$arch" "$BIN_DIR/cloudflared"
+    dl "$CF_BASE/cloudflared-$os-$arch" "$BIN_DIR/cloudflared"
   fi
   chmod +x "$BIN_DIR/cloudflared"
 fi
@@ -34,9 +46,13 @@ fi
 if [ -x "$BIN_DIR/caddy" ] || command -v caddy >/dev/null 2>&1; then
   echo "[rc] caddy 已就绪"
 elif [ "$os" = linux ]; then
-  echo "[rc] 解析 caddy 最新版本 ..."
-  TAG="$(curl -fsSL -m 30 https://api.github.com/repos/caddyserver/caddy/releases/latest \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+  if [ -n "${RC_CADDY_VERSION:-}" ]; then
+    TAG="$RC_CADDY_VERSION"
+  else
+    echo "[rc] 解析 caddy 最新版本 ..."
+    TAG="$(curl -fsSL -m 30 https://api.github.com/repos/caddyserver/caddy/releases/latest \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+  fi
   VER="${TAG#v}"
   echo "[rc] 下载 caddy $TAG ($os-$arch) ..."
   dl "https://github.com/caddyserver/caddy/releases/download/$TAG/caddy_${VER}_${os}_${arch}.tar.gz" "$BIN_DIR/caddy.tgz"
@@ -44,6 +60,7 @@ elif [ "$os" = linux ]; then
   rm -f "$BIN_DIR/caddy.tgz"
   chmod +x "$BIN_DIR/caddy"
 else
+  [ -n "${RC_CADDY_VERSION:-}" ] && echo "[rc] ⚠ darwin 走官方构建 API，仅提供最新版，忽略 RC_CADDY_VERSION"
   echo "[rc] 下载 caddy ($os-$arch, 官方构建 API, 裸二进制 ~35MB, 不支持断点) ..."
   i=0
   while [ $i -lt 5 ]; do
