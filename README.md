@@ -39,8 +39,19 @@ cd dsh-remote-control
 scripts/install.sh     # downloads official cloudflared/caddy binaries, generates password
 ```
 
-Then edit `~/.remote-control/rc.env` and set `RC_FEISHU_OPEN_ID` (your Feishu open id, `ou_...`),
-and make sure a bot of your Feishu app can DM you. Start everything:
+Prerequisite: the DSH web profile must already be running on `127.0.0.1:3080` (start it yourself
+with `dsh web`) — `dsh-web` manages the gateway only and never starts/stops DSH.
+
+Then edit `~/.remote-control/rc.env`:
+
+- **Primary notification channel (bot DM):** set `RC_FEISHU_OPEN_ID` (your open id, `ou_...`).
+  Requires [`lark-cli`](https://github.com/larksuite/cli) installed and configured with your
+  Feishu app (`lark-cli config init`); the app's bot needs IM permission and must be able to
+  DM you.
+- **Fallback channel:** set `RC_FEISHU_WEBHOOK` (group custom-bot webhook) — works without
+  lark-cli. If both are set, DM is used and webhook only on failure.
+
+Start everything:
 
 ```bash
 dsh-web start
@@ -111,10 +122,11 @@ never enters git.
 
 - DSH keeps binding to `127.0.0.1` only; the only public surface is the Cloudflare edge behind
   the password gate.
-- Password: 128-bit random, bcrypt-hashed files kept locally; failed logins lock the source IP
-  for 5 minutes (HTTP 429).
-- Session cookie is `HttpOnly` + `SameSite=Lax`, valid 7 days; rotate everything with
-  `dsh-web restart` after editing `~/.remote-control/session.secret` / regenerating the password.
+- Password: 128-bit random, stored locally with `600` permissions; failed logins lock the
+  source IP for 5 minutes (HTTP 429).
+- Session cookie is `HttpOnly` + `SameSite=Lax`, valid 7 days. To rotate: regenerate the
+  password (`scripts/gen-password.sh`) and/or edit `~/.remote-control/session.secret`, then
+  `dsh-web restart`.
 - Never commit `rc.env`, `password`, `session.secret` or rendered `Caddyfile` — `.gitignore`
   already covers them; CI plus review keep it that way.
 
@@ -130,7 +142,7 @@ Design decisions and field notes (in Chinese): [docs/product-design.md](docs/pro
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In short: CI must pass (`shellcheck` + syntax checks),
+See [CONTRIBUTING.md](CONTRIBUTING.md) · [中文版](CONTRIBUTING.zh-CN.md). In short: CI must pass (`shellcheck` + syntax checks),
 scripts stay bash-3.2/POSIX compatible, platform-specific changes come with real test evidence.
 
 ## License

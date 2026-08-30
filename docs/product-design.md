@@ -110,7 +110,7 @@ remote-control/
 - **D1 · v1 认证用 Caddy 而非自写代理**：Caddy 生产级处理 WebSocket/SSE/大报文，Mac `brew install`、Linux 官方 apt/dnf 仓库分钟级可用，配置 ~5 行；自写代理的 WS/SSE 边界处理是调研报告中点名的坑。自研代理仅在插件化阶段若内核需要时再评估。
 - **D2 · 插件化推迟到最后，且以"双平台稳定 ≥1 周"为门禁**：调研报告确认该领域是红海（10+ 同类插件），做插件的动机应当是"打磨过的自有方案反哺生态"，而不是"为了插件而插件"。本地版本身就是最终方案的编排层原型；生态用户大量在 Linux，插件发布前必须先有 Linux 实测。
 - **D3 · 认证放代理层，不进 DSH 层**：不修改 DSH 配置、不装第三方认证插件，规避调研报告指出的"插件依赖 DSH 内部 Cordis API、随版本升级碎裂"的最大风险。
-- **D4 · 密码管理**：`gen-password.sh` 用 `openssl rand` 生成 ≥128bit 熵口令 → `caddy hash-password` 得 bcrypt 哈希写入 Caddyfile → 明文仅首次展示 + 推送飞书一次，本机存 `~/.remote-control/password`（600）。`rotate-password.sh` 一键轮换并重载 Caddy。
+- **D4 · 密码管理**（v3 起认证改 Cookie 令牌方案，bcrypt 环节已被取代，见 tech-notes）：`gen-password.sh` 用 `openssl rand` 生成 ≥128bit 熵口令 → 明文仅首次展示 + 推送飞书一次，本机存 `~/.remote-control/password`（600）。`rotate-password.sh` 一键轮换并重载 Caddy。
 - **D5 · 通知是刚需**：见 S4。watchdog 对 URL 变化、进程死亡、上游不可达三类事件都推送，推送失败降级写本地日志；消息带 hostname，多机部署时不混淆。
 - **D6 · 命名**（2026-08-31 修订）：仓库与插件包统一命名 `dsh-remote-control`，`dsh-` 前缀保持与 DSH 生态一致，仓库公开（MIT）。
 - **D7 · 平台策略（分层收敛）**：Mac 优先开发验收 → Linux（VPS/云服务器）M3 一等支持 → Windows 不官方支持、开放 PR（我无 Windows 测试条件，不发布自己没验证过的东西；PR 要求贡献者附带实测环境与截图）。技术上，平台差异只允许出现在 `install.sh` 与服务单元文件两层，核心脚本保持 bash 3.2/POSIX 兼容，上游地址 `RC_UPSTREAM` 可配置（默认 `127.0.0.1:3080`，使其不绑定 DSH 也能反代其他本地服务）。
