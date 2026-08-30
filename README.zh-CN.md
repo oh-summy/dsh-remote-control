@@ -37,8 +37,18 @@ cd dsh-remote-control
 scripts/install.sh     # 下载官方 cloudflared/caddy 二进制，生成密码
 ```
 
-然后编辑 `~/.remote-control/rc.env`，填入 `RC_FEISHU_OPEN_ID`（你的飞书 open id，`ou_` 开头），
-并确保飞书应用的机器人可以给你发私信。启动：
+前置条件：DSH web profile 已在 `127.0.0.1:3080` 运行（用 `dsh web` 自行启动）——
+`dsh-web` 只管理网关，不负责 DSH 的启停。
+
+然后编辑 `~/.remote-control/rc.env`：
+
+- **主通知通道（bot 私发）**：填 `RC_FEISHU_OPEN_ID`（你的 open id，`ou_` 开头）。需要安装并
+  配置 [`lark-cli`](https://github.com/larksuite/cli)（`lark-cli config init` 配置你的飞书应用），
+  应用机器人需有发消息权限且能给你发私信。
+- **兜底通道**：填 `RC_FEISHU_WEBHOOK`（群自定义机器人 Webhook），无需 lark-cli。
+  两者都填时优先私发，失败才走 Webhook。
+
+启动：
 
 ```bash
 dsh-web start
@@ -106,9 +116,9 @@ RC_CADDY_VERSION=v2.11.4 scripts/install.sh          # 仅 linux；darwin 构建
 ## 安全说明
 
 - DSH 始终只绑 `127.0.0.1`；唯一公网暴露面是密码门之后的 Cloudflare 边缘。
-- 密码：128 位随机生成，本地保存；连续失败 5 次锁定来源 IP 5 分钟（HTTP 429）。
-- 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，7 天有效；更换密码或令牌后 `dsh-web restart`
-  即全部轮换。
+- 密码：128 位随机生成，本地保存（权限 600）；连续失败 5 次锁定来源 IP 5 分钟（HTTP 429）。
+- 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，7 天有效。轮换方式：重新生成密码
+  （`scripts/gen-password.sh`）和/或修改 `~/.remote-control/session.secret`，然后 `dsh-web restart`。
 - 严禁提交 `rc.env`、`password`、`session.secret` 和渲染后的 `Caddyfile`——`.gitignore` 已
   覆盖，CI 与评审双重把关。
 
@@ -124,7 +134,7 @@ RC_CADDY_VERSION=v2.11.4 scripts/install.sh          # 仅 linux；darwin 构建
 
 ## 参与贡献
 
-见 [CONTRIBUTING.md](CONTRIBUTING.md)。简言之：CI 必须通过（`shellcheck` + 语法检查）、脚本
+见 [CONTRIBUTING.md](CONTRIBUTING.md) · [English](CONTRIBUTING.zh-CN.md)。简言之：CI 必须通过（`shellcheck` + 语法检查）、脚本
 保持 bash 3.2 / POSIX 兼容、平台相关改动必须附真实测试证据。
 
 ## 许可证
