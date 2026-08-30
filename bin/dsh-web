@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# dsh-web — remote control 一站式命令
+# 用法: dsh-web start|stop|restart|status|logs|password|url|install
+#   start     启动全链路，终端打印 URL + 密码后返回（通知照常推飞书）
+#   stop      停止全链路
+#   restart   停止并重新启动（URL 会变，飞书会推新卡片）
+#   status    查看各组件状态
+#   logs      dsh-web logs [caddy|cloudflared|auth|watchdog|notify]  尾部日志
+#   password  打印访问密码
+#   url       打印当前入口 URL
+#   install   安装/修复（依赖、配置、凭据、命令行链接）
+set -u
+
+# 兼容经由 symlink（PATH）调用：解析真实路径定位仓库
+SOURCE="${0:-}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$DIR/$SOURCE" ;; esac
+done
+REPO_DIR="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+
+cmd="${1:-help}"
+case "$cmd" in
+  start)
+    "$REPO_DIR/bin/up.sh"
+    echo "[rc]    密码: $(cat "$HOME/.remote-control/password" 2>/dev/null || echo '(见 ~/.remote-control/password)')"
+    ;;
+  stop)    exec "$REPO_DIR/bin/down.sh" ;;
+  status)  exec "$REPO_DIR/bin/status.sh" ;;
+  restart)
+    "$REPO_DIR/bin/down.sh"
+    sleep 1
+    "$REPO_DIR/bin/up.sh"
+    echo "[rc]    密码: $(cat "$HOME/.remote-control/password" 2>/dev/null || echo '')"
+    ;;
+  logs)
+    name="${2:-all}"
+    case "$name" in
+      caddy)       f="$HOME/.remote-control/logs/caddy.log" ;;
+      cloudflared) f="$HOME/.remote-control/logs/cloudflared.log" ;;
+      auth)        f="$HOME/.remote-control/logs/auth.log" ;;
+      watchdog)    f="$HOME/.remote-control/logs/watchdog.log" ;;
+      notify)      f="$HOME/.remote-control/logs/notify.log" ;;
+      all)         f="$HOME/.remote-control/logs" ;;
+      *) echo "未知日志: $name（可选 caddy|cloudflared|auth|watchdog|notify|all）"; exit 1 ;;
+    esac
+    if [ "$name" = all ]; then
+      for g in "$HOME/.remote-control/logs"/*.log; do
+        echo "═══ $(basename "$g") ═══"; tail -n 10 "$g"
+      done
+    else
+      tail -n "${3:-40}" "$f"
+    fi
+    ;;
+  password) cat "$HOME/.remote-control/password" ;;
+  url)      cat "$HOME/.remote-control/run/url" 2>/dev/null || echo "(未启动)" ;;
+  install)  exec "$REPO_DIR/scripts/install.sh" ;;
+  *)
+    sed -n '2,12p' "$SOURCE" | sed 's/^# \{0,1\}//'
+    exit 1
+    ;;
+esac

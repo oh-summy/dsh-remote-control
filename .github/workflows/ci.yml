@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck --version
+          shellcheck bin/*.sh scripts/*.sh bin/dsh-web
+
+      - name: bash syntax (bash -n)
+        run: |
+          for f in bin/*.sh scripts/*.sh bin/dsh-web; do
+            bash -n "$f" || exit 1
+          done
+          echo "bash syntax ok"
+
+      - name: python compile
+        run: python3 -m py_compile bin/auth-server.py
+
+      - name: no secrets tracked
+        run: |
+          ! grep -rEn "(ou_[0-9a-f]{20,}|\$2[aby]\\\$|RC_TOKEN=.?[0-9a-f]{32,})" \
+            --include="*.md" --include="*.sh" --include="*.py" --include="*.tmpl" . || true
+          # 关键密钥文件必须被忽略（双保险）
+          git ls-files --error-unmatch etc/rc.env 2>/dev/null && exit 1 || true
+          git ls-files --error-unmatch .remote-control 2>/dev/null && exit 1 || true
+          echo "secret scan ok"

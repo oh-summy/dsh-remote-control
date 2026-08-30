@@ -1,0 +1,43 @@
+{
+	admin 127.0.0.1:2019
+	auto_https off
+	log {
+		output file {env.RC_LOG_DIR}/caddy.log
+		level WARN
+	}
+}
+
+# 鉴权在 Caddy 内完成（Cookie 含访问令牌），静态资源/插件脚本完全不过
+# Python——浏览器并发拉取几十个插件脚本时，任何 per-request 外部鉴权
+# 服务都会成为瓶颈（ backlog 溢出 → 随机插件加载失败）。auth-server.py
+# 只负责登录页（限流 + 校验密码 + 发 Cookie）。
+:4080 {
+	bind 127.0.0.1
+
+	# {$RC_TOKEN} 是适配期替换（要求 caddy 启动前已 export RC_TOKEN）；
+	# 不能写 {env.RC_TOKEN}——那是请求期占位符，正则编译时不会替换
+	@authed header_regexp Cookie {$RC_TOKEN}
+	@loginpaths path /rc-login /rc-logout
+
+	handle @loginpaths {
+		reverse_proxy 127.0.0.1:9091
+	}
+
+	handle @authed {
+		# DSH 的 /api browser-trust fence 要求 Host 为 loopback 且 Origin 与
+		# Host 一致（trustedHosts 不支持通配符，Quick Tunnel 域名每次都变，
+		# 无法静态枚举——服务器版被迫每次重启 DSH 加 --trusted-host 即此因）。
+		# 在代理层重写为上游本机地址，DSH 视角始终是本地请求；跨站防护由
+		# 本项目的 Cookie 令牌墙承担。
+		reverse_proxy {env.RC_UPSTREAM} {
+			header_up Host {env.RC_UPSTREAM}
+			header_up Origin http://{env.RC_UPSTREAM}
+		}
+	}
+
+	handle {
+		# 未授权：302 到登录页（respond 首参为纯数字即状态码，无 matcher 歧义）
+		header Location /rc-login
+		respond 302
+	}
+}
