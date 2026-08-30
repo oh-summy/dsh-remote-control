@@ -24,7 +24,7 @@ cmd="${1:-help}"
 case "$cmd" in
   start)
     "$REPO_DIR/bin/up.sh"
-    echo "[rc]    密码: $(cat "$HOME/.remote-control/password" 2>/dev/null || echo '(见 ~/.remote-control/password)')"
+    echo "[dsh-web]    密码: $(cat "$HOME/.remote-control/password" 2>/dev/null || echo '(见 ~/.remote-control/password)')"
     ;;
   stop)    exec "$REPO_DIR/bin/down.sh" ;;
   status)  exec "$REPO_DIR/bin/status.sh" ;;
@@ -32,7 +32,7 @@ case "$cmd" in
     "$REPO_DIR/bin/down.sh"
     sleep 1
     "$REPO_DIR/bin/up.sh"
-    echo "[rc]    密码: $(cat "$HOME/.remote-control/password" 2>/dev/null || echo '')"
+    echo "[dsh-web]    密码: $(cat "$HOME/.remote-control/password" 2>/dev/null || echo '')"
     ;;
   logs)
     name="${2:-all}"

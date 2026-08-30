@@ -11,5 +11,5 @@ printf '%s\n' "$PW" > "$RC_HOME/password"
 rm -f "$RC_HOME/password.bcrypt"
 chmod 600 "$RC_HOME/password"
 
-echo "[rc] 密码已生成并存入 $RC_HOME/password（明文仅此一次展示）"
+echo "[dsh-web] 密码已生成并存入 $RC_HOME/password（明文仅此一次展示）"
 echo "     $PW"

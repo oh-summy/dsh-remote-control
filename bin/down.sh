@@ -11,9 +11,9 @@ for name in watchdog cloudflared caddy auth; do
   if [ -f "$f" ]; then
     pid="$(cat "$f")"
     if kill "$pid" 2>/dev/null; then
-      echo "[rc] stopped $name (pid $pid)"
+      echo "[dsh-web] stopped $name (pid $pid)"
     else
-      echo "[rc] $name 未在运行"
+      echo "[dsh-web] $name 未在运行"
     fi
     rm -f "$f"
   fi
@@ -21,6 +21,6 @@ done
 
 # 兜底：精确匹配命令行清理残留（仅本用户的隧道/反代进程）
 if pkill -f "cloudflared tunnel --url http://$RC_LISTEN" 2>/dev/null; then
-  echo "[rc] 清理残留 cloudflared"
+  echo "[dsh-web] 清理残留 cloudflared"
 fi
 exit 0
