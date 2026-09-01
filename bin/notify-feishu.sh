@@ -20,7 +20,8 @@ NOW="$(date '+%F %T')"
 case "$EVENT" in
   remote.started)   COLOR=green; TITLE="远程访问已就绪" ;;
   remote.changed)   COLOR=blue;  TITLE="入口地址已更新" ;;
-  remote.down)      COLOR=red;   TITLE="远程访问中断" ;;
+  # remote.down 可能带说明后缀（如「隧道进程退出」），用通配保证红色告警
+  remote.down*)     COLOR=red;   TITLE="远程访问中断" ;;
   remote.recovered) COLOR=green; TITLE="远程访问已恢复" ;;
   remote.status)    COLOR=grey;  TITLE="状态确认（通道测试）" ;;
   *)                COLOR=grey;  TITLE="$EVENT" ;;

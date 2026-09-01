@@ -9,7 +9,7 @@ mkdir -p "$BIN_DIR" "$RC_HOME/logs" "$RC_HOME/run"
 chmod 700 "$RC_HOME"
 
 OS="$(uname -s)"; ARCH="$(uname -m)"
-case "$OS" in Darwin) os=darwin;; Linux) os=linux;; *) echo "[rc] ✗ 不支持的系统: $OS（Windows 欢迎提 PR）"; exit 1;; esac
+case "$OS" in Darwin) os=darwin;; Linux) os=linux;; *) echo "[rc] ✗ 不支持的系统: ${OS}（Windows 欢迎提 PR）"; exit 1;; esac
 case "$ARCH" in x86_64) arch=amd64;; aarch64|arm64) arch=arm64;; *) echo "[rc] ✗ 不支持的架构: $ARCH"; exit 1;; esac
 echo "[rc] 平台: $os-$arch"
 
@@ -92,7 +92,7 @@ if [ -z "$LINK_DIR" ]; then
 fi
 ln -sf "$REPO_DIR/bin/dsh-web" "$LINK_DIR/dsh-web"
 case ":$PATH:" in
-  *":$LINK_DIR:"*) echo "[rc] 命令已安装: dsh-web（$LINK_DIR）" ;;
+  *":$LINK_DIR:"*) echo "[rc] 命令已安装: dsh-web（${LINK_DIR}）" ;;
   *) echo "[rc] 命令已安装: $LINK_DIR/dsh-web（注意：$LINK_DIR 不在 PATH）" ;;
 esac
 

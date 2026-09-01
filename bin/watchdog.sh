@@ -10,6 +10,7 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 LAST_URL="$(cat "$RC_HOME/run/url" 2>/dev/null || echo '')"
 LAST_DOWN=0
+GATE_DOWN=0
 
 echo "$(date '+%F %T') watchdog started" >> "$RC_HOME/logs/watchdog.log"
 while true; do
@@ -20,6 +21,24 @@ while true; do
     echo "$(date '+%F %T') cloudflared 进程退出" >> "$RC_HOME/logs/watchdog.log"
     "$REPO_DIR/bin/notify-feishu.sh" "remote.down（隧道进程退出）"
     exit 0
+  fi
+
+  # 1.5) 密码门组件（caddy/auth）退出 → 隧道仍在、公网全 502，必须单独报；
+  #      各只报一次，恢复（dsh-web start 自愈或人工拉起）后复位可再报
+  DEAD=""
+  for comp in caddy auth; do
+    f="$RC_HOME/run/$comp.pid"
+    if [ -f "$f" ] && ! kill -0 "$(cat "$f")" 2>/dev/null; then
+      DEAD="$DEAD $comp"
+    fi
+  done
+  if [ -n "$DEAD" ] && [ "$GATE_DOWN" = "0" ]; then
+    echo "$(date '+%F %T') 密码门组件退出:$DEAD" >> "$RC_HOME/logs/watchdog.log"
+    # ${DEAD} 显式定界：bash 3.2 会把后面紧跟的多字节字符吞进变量名
+    "$REPO_DIR/bin/notify-feishu.sh" "remote.down（密码门组件退出:${DEAD}）"
+    GATE_DOWN=1
+  elif [ -z "$DEAD" ] && [ "$GATE_DOWN" = "1" ]; then
+    GATE_DOWN=0
   fi
 
   # 2) Quick Tunnel URL 变化（断线重连后可能换新地址）

@@ -36,20 +36,30 @@ case "$cmd" in
     ;;
   logs)
     name="${2:-all}"
-    case "$name" in
-      caddy)       f="$HOME/.remote-control/logs/caddy.log" ;;
-      cloudflared) f="$HOME/.remote-control/logs/cloudflared.log" ;;
-      auth)        f="$HOME/.remote-control/logs/auth.log" ;;
-      watchdog)    f="$HOME/.remote-control/logs/watchdog.log" ;;
-      notify)      f="$HOME/.remote-control/logs/notify.log" ;;
-      all)         f="$HOME/.remote-control/logs" ;;
-      *) echo "未知日志: $name（可选 caddy|cloudflared|auth|watchdog|notify|all）"; exit 1 ;;
-    esac
     if [ "$name" = all ]; then
       for g in "$HOME/.remote-control/logs"/*.log; do
         echo "═══ $(basename "$g") ═══"; tail -n 10 "$g"
       done
+    elif [ "$name" = caddy ]; then
+      # caddy.log 由 Caddyfile 配置（WARN 级，可能尚未产生）；stdout 恒有
+      shown=0
+      for f in "$HOME/.remote-control/logs/caddy.log" \
+               "$HOME/.remote-control/logs/caddy.stdout.log"; do
+        if [ -f "$f" ]; then
+          echo "── $(basename "$f") ──"
+          tail -n "${3:-40}" "$f"
+          shown=1
+        fi
+      done
+      [ "$shown" = "0" ] && echo "(暂无 caddy 日志)"
     else
+      case "$name" in
+        cloudflared) f="$HOME/.remote-control/logs/cloudflared.log" ;;
+        auth)        f="$HOME/.remote-control/logs/auth.log" ;;
+        watchdog)    f="$HOME/.remote-control/logs/watchdog.log" ;;
+        notify)      f="$HOME/.remote-control/logs/notify.log" ;;
+        *) echo "未知日志: ${name}（可选 caddy|cloudflared|auth|watchdog|notify|all）"; exit 1 ;;
+      esac
       tail -n "${3:-40}" "$f"
     fi
     ;;

@@ -5,3 +5,4 @@
 /password.bcrypt
 /rc.env
 /Caddyfile
+__pycache__/

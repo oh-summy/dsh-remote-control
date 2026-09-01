@@ -12,9 +12,9 @@ echo "=== remote control ==="
 for name in caddy cloudflared watchdog auth; do
   f="$RC_HOME/run/$name.pid"
   if [ -f "$f" ] && kill -0 "$(cat "$f")" 2>/dev/null; then
-    echo "  $name       running (pid $(cat "$f"))"
+    printf '  %-11s %s\n' "$name" "running (pid $(cat "$f"))"
   else
-    echo "  $name       stopped"
+    printf '  %-11s %s\n' "$name" "stopped"
   fi
 done
 
