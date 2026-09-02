@@ -97,8 +97,8 @@ RC_AUTH_PORT="${RC_AUTH_PORT:-9091}"
 GATE_CODE="000"; AUTH_CODE="000"
 i=0
 while [ $i -lt 15 ]; do
-  GATE_CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_LISTEN/" 2>/dev/null || echo 000)"
-  AUTH_CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$RC_AUTH_PORT/rc-login" 2>/dev/null || echo 000)"
+  GATE_CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_LISTEN/" 2>/dev/null)"
+  AUTH_CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$RC_AUTH_PORT/rc-login" 2>/dev/null)"
   [ "$GATE_CODE" = "302" ] && [ "$AUTH_CODE" = "200" ] && break
   i=$((i + 1))
   sleep 1
