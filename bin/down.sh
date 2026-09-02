@@ -24,7 +24,7 @@ for name in watchdog cloudflared caddy auth; do
 done
 
 # 兜底：精确匹配命令行清理残留（仅本用户的隧道/反代进程）
-if pkill -f "cloudflared tunnel --url http://$RC_LISTEN" 2>/dev/null; then
+if pkill -f "cloudflared tunnel --url http://$RC_LISTEN --no-autoupdate" 2>/dev/null; then
   echo "[dsh-web]   清理残留 cloudflared"
 fi
 

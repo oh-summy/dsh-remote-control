@@ -38,6 +38,7 @@ while true; do
     "$REPO_DIR/bin/notify-feishu.sh" "remote.down（密码门组件退出:${DEAD}）"
     GATE_DOWN=1
   elif [ -z "$DEAD" ] && [ "$GATE_DOWN" = "1" ]; then
+    "$REPO_DIR/bin/notify-feishu.sh" "remote.recovered（密码门组件恢复）"
     GATE_DOWN=0
   fi
 

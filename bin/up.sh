@@ -34,7 +34,7 @@ fi
 if [ "$alive" -gt 0 ]; then
   # 只判 caddy 会漏掉半死状态（如隧道在、密码门崩），这里任一存活即先清场再启
   echo "[dsh-web] 检测到部分组件仍在运行，先停止残留 ..."
-  "$REPO_DIR/bin/down.sh" || true
+  "$REPO_DIR/bin/down.sh" || echo "[dsh-web] ⚠ 清理残留失败，继续尝试启动 ..."
 fi
 
 mkdir -p "$RC_HOME/logs" "$RC_HOME/run"
