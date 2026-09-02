@@ -22,6 +22,7 @@ PORT = int(os.environ.get("RC_AUTH_PORT", "9091"))
 SESSION_TTL = 7 * 86400
 LOCK_THRESHOLD = 5      # 连续失败次数
 LOCK_SECONDS = 300      # 锁定时长
+MAX_BODY = 64 * 1024    # 登录表单远小于此；封顶防畸形大请求吃内存
 
 with open(os.path.join(RC_HOME, "session.secret"), encoding="ascii") as f:
     TOKEN = f.read().strip()
@@ -75,17 +76,23 @@ class Handler(BaseHTTPRequestHandler):
         self._send(302, headers=hdrs)
 
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
         if path == "/rc-login":
+            qs = urllib.parse.parse_qs(parsed.query)
             ip = client_ip(self.headers)
-            if time.time() < FAILS.get(ip, [0, 0])[1]:
-                body = PAGE.format(host=html.escape(self.headers.get("Host", "")),
-                                   err="<p class='err'>失败次数过多，请 5 分钟后再试</p>").encode()
-                self._send(429, body, [("Content-Type", "text/html; charset=utf-8")])
-                return
+            locked = time.time() < FAILS.get(ip, [0, 0])[1]
+            if locked:
+                err = "<p class='err'>失败次数过多，请 5 分钟后再试</p>"
+            elif qs.get("err"):
+                # do_POST 密码错误后 302 过来；不带提示用户只会看到空白表单
+                err = "<p class='err'>密码错误，请重试</p>"
+            else:
+                err = ""
             body = PAGE.format(host=html.escape(self.headers.get("Host", "")),
-                               err="").encode()
-            self._send(200, body, [("Content-Type", "text/html; charset=utf-8")])
+                               err=err).encode()
+            self._send(429 if locked else 200, body,
+                       [("Content-Type", "text/html; charset=utf-8")])
         elif path == "/rc-logout":
             self._redirect("/rc-login", clear_cookie=True)
         else:
@@ -96,6 +103,10 @@ class Handler(BaseHTTPRequestHandler):
             self._redirect("/rc-login")
             return
         length = int(self.headers.get("Content-Length", "0") or 0)
+        if length > MAX_BODY:
+            self._send(413, b"payload too large",
+                       [("Content-Type", "text/plain; charset=utf-8")])
+            return
         form = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
         pw = form.get("pw", [""])[0]
         ip = client_ip(self.headers)
@@ -104,7 +115,9 @@ class Handler(BaseHTTPRequestHandler):
         if now < lock:
             self._redirect("/rc-login?locked=1")
             return
-        if hmac.compare_digest(pw, PASSWORD):
+        # compare_digest 只接受 ASCII str；用户粘贴非 ASCII 内容时会抛 TypeError，
+        # 统一按字节比较（时序安全性不变）
+        if hmac.compare_digest(pw.encode("utf-8"), PASSWORD.encode("utf-8")):
             FAILS.pop(ip, None)
             cookie = (f"rc_session={TOKEN}; Max-Age={SESSION_TTL}; Path=/; "
                       "HttpOnly; SameSite=Lax")
