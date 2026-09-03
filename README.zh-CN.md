@@ -23,8 +23,7 @@
 - **飞书通知是刚需，不是锦上添花**——Quick Tunnel 每次启动都分配*新的随机 URL*，没有推送
   通道就等于失联。每次 `start` / URL 变化 / 故障 / 恢复都会推送卡片，并单独发一条可直接
   复制的密码纯文本消息。
-- **DSH 升级免疫**——链路只与 `127.0.0.1:3080` 说 HTTP，不碰任何 DSH 内部 API；代理层自动
-  重写 `Host`/`Origin`，隧道域名每次变化后 DSH 的 browser-trust 防线依旧放行。
+- **DSH 升级免疫**——链路只与 `127.0.0.1:3080` 说 HTTP，不碰任何 DSH 内部 API。
 
 ## 快速开始
 
@@ -56,29 +55,6 @@ dsh-web start
 
 `start` 会在终端打印 URL 和密码后返回命令行，同时推送卡片 + 密码到你的飞书私聊。打开 URL，
 输一次密码即可，Cookie 7 天内免登录。
-
-## 安装方式与版本策略
-
-**没有任何人需要源码编译。** `install.sh` 按优先级选择：
-
-1. **系统已有**（`caddy` / `cloudflared` 已在 `PATH`，比如 brew 或官方 apt 仓库装的）→
-   直接使用，零下载。
-2. **官方预编译静态二进制** → 从 cloudflared 的 GitHub Releases 与 caddyserver.com 官方构建
-   API 下载（Caddy v2.11 起 GitHub Release 不再提供 darwin 资产），放入
-   `~/.remote-control/bin/`。全程不碰编译器。
-
-**版本默认跟随上游 latest**——这是刻意设计：隧道客户端持续获得安全修复，且 Cloudflare 会
-逐步淘汰旧版 cloudflared；本项目依赖面极小（几个 CLI flag + 基础 Caddyfile 语法），上游
-变动风险很低。需要紧急回滚时可钉版：
-
-```bash
-RC_CLOUDFLARED_VERSION=2026.8.2 scripts/install.sh   # GitHub release tag，两平台通用
-RC_CADDY_VERSION=v2.11.4 scripts/install.sh          # 仅 linux；darwin 构建 API 只有最新版
-```
-
-作为 DSH 插件（M4）：安装方式将变成生态标准的
-`dsh plugin --profile web add dsh-remote-control`（纯 npm 包，同样无需源码编译），
-二进制获取逻辑并入插件首次启动。
 
 ## 命令
 
@@ -122,15 +98,13 @@ RC_CADDY_VERSION=v2.11.4 scripts/install.sh          # 仅 linux；darwin 构建
 - 严禁提交 `rc.env`、`password`、`session.secret` 和渲染后的 `Caddyfile`——`.gitignore` 已
   覆盖，CI 与评审双重把关。
 
+## 架构设计
+
+系统架构、设计决策、组件交互见 [docs/architecture.md](docs/architecture.md)。
+
 ## 路线图
 
-- [x] M1 —— macOS：隧道 + 密码门 + 飞书卡片通知，端到端验证
-- [ ] M2 —— launchd 自启、固定域名（Named Tunnel）、一键换密码
-- [ ] M3 —— Linux/VPS：systemd 单元、apt/dnf 安装路径、POSIX 兼容审计、VPS 实机验收
-- [ ] M4 —— 封装为 DSH 插件（`dsh plugin --profile web add`），Notifier 事件接口
-
-设计决策与踩坑记录（中文）：[docs/product-design.md](docs/product-design.md)、
-[docs/tech-notes.md](docs/tech-notes.md)。
+各阶段进度与后续计划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 参与贡献
 
