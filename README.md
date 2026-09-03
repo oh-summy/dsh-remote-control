@@ -40,7 +40,7 @@ scripts/install.sh     # downloads official cloudflared/caddy binaries, generate
 
 By default, `dsh-web start` auto-detects if DSH web is not running and starts it
 automatically. To disable this behavior, set `RC_AUTOSTART_DSH=false` in `~/.remote-control/rc.env`.
-You can also start DSH web manually with `dsh web` before running `dsh-web start`.
+(If auto-start fails, check `dsh-web logs dshweb` or start DSH web manually with `dsh web`.)
 
 Then edit `~/.remote-control/rc.env`:
 
