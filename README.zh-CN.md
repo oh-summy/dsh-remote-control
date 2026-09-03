@@ -36,8 +36,9 @@ cd dsh-remote-control
 scripts/install.sh     # 下载官方 cloudflared/caddy 二进制，生成密码
 ```
 
-前置条件：DSH web profile 已在 `127.0.0.1:3080` 运行（用 `dsh web` 自行启动）——
-`dsh-web` 只管理网关，不负责 DSH 的启停。
+默认情况下，`dsh-web start` 会自动检测 DSH web 是否已运行，若未运行则自动拉起。
+如需禁用此行为，在 `~/.remote-control/rc.env` 中设置 `RC_AUTOSTART_DSH=false`。
+你也可以在运行 `dsh-web start` 之前手动执行 `dsh web`。
 
 然后编辑 `~/.remote-control/rc.env`：
 

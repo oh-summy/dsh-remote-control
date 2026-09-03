@@ -19,6 +19,29 @@ for cmd in caddy cloudflared python3; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "[dsh-web] ✗ 未安装 ${cmd}（先运行 dsh-web install）"; exit 1; }
 done
 
+# Auto-start DSH web if enabled and upstream is unreachable
+: "${RC_AUTOSTART_DSH:=true}"
+if [ "$RC_AUTOSTART_DSH" = "true" ]; then
+  CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null)"
+  if [ "$CODE" = "000" ]; then
+    echo "[dsh-web] DSH web 未启动，正在自动拉起 ..."
+    nohup dsh web >>"$RC_HOME/logs/dsh-web.log" 2>&1 &
+    i=0
+    while [ $i -lt 30 ]; do
+      sleep 1
+      CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null)"
+      [ "$CODE" != "000" ] && break
+      i=$((i + 1))
+      [ $((i % 10)) -eq 0 ] && echo "[dsh-web]   ...等待 DSH web 启动（剩余 $((30 - i))s）"
+    done
+    if [ "$CODE" = "000" ]; then
+      echo "[dsh-web] ✗ DSH web 自动启动失败，请手动执行 dsh web 后重试"
+      exit 1
+    fi
+    echo "[dsh-web]     DSH web 已就绪"
+  fi
+fi
+
 alive=0
 for name in watchdog cloudflared caddy auth; do
   f="$RC_HOME/run/$name.pid"
