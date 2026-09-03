@@ -19,6 +19,8 @@ for cmd in caddy cloudflared python3; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "[dsh-web] ✗ 未安装 ${cmd}（先运行 dsh-web install）"; exit 1; }
 done
 
+mkdir -p "$RC_HOME/logs" "$RC_HOME/run"
+[ -f "$RC_HOME/Caddyfile" ] || cp "$REPO_DIR/etc/Caddyfile" "$RC_HOME/Caddyfile"
 # Auto-start DSH web if enabled and upstream is unreachable
 : "${RC_AUTOSTART_DSH:=true}"
 if [ "$RC_AUTOSTART_DSH" = "true" ]; then
@@ -60,8 +62,6 @@ if [ "$alive" -gt 0 ]; then
   "$REPO_DIR/bin/down.sh" || echo "[dsh-web] ⚠ 清理残留失败，继续尝试启动 ..."
 fi
 
-mkdir -p "$RC_HOME/logs" "$RC_HOME/run"
-[ -f "$RC_HOME/Caddyfile" ] || cp "$REPO_DIR/etc/Caddyfile" "$RC_HOME/Caddyfile"
 
 # 本机服务与 cloudflared 都不需要代理；环境里的死代理只会坏事
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
