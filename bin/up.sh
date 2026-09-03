@@ -62,8 +62,7 @@ if [ "$alive" -gt 0 ]; then
   "$REPO_DIR/bin/down.sh" || echo "[dsh-web] ⚠ 清理残留失败，继续尝试启动 ..."
 fi
 
-
-# 本机服务与 cloudflared 都不需要代理；环境里的死代理只会坏事
+# 本机服务与 cloudflared/ 都不需要代理；环境里的死代理只会坏事
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 
 echo "[dsh-web] 1/4 检查凭据 ..."
