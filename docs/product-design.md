@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| 版本 | v0.3（草案，2026-08-30） |
+| 版本 | v0.3（active reference · M1 完成，2026-08-30） |
 | 仓库 | `/Users/rocky/project/remote-control`（main 分支） |
 | Git 身份 | `summy wu <summy.wu81@gmail.com>`（沿用 signal-hunter，GitHub 账号 `oh-summy`） |
 | 平台策略 | **macOS 优先**（开发+验收）· **Linux/VPS/云服务器一等支持**（M3 落地）· **Windows 不官方支持，开放 PR** |
 | 上游调研 | [DSH 远程访问安全方案调研报告](https://my.feishu.cn/docx/HkJGd37SToEFEaxU5KbckaLUnjc)（2026-08-28） |
-| 状态 | 设计阶段，未开始编码 |
+| 状态 | M1 完成，M2 进行中 |
 
 ---
 
