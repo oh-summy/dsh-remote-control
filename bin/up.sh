@@ -14,30 +14,36 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # 优先使用 RC_HOME/bin 下的官方二进制（install.sh 下载），其次系统 PATH
 export PATH="$RC_HOME/bin:$PATH"
 
-for cmd in caddy cloudflared python3; do
+for cmd in caddy cloudflared python3 curl; do
   # ${cmd} 显式定界：bash 3.2 会把后面紧跟的多字节字符吞进变量名
   command -v "$cmd" >/dev/null 2>&1 || { echo "[dsh-web] ✗ 未安装 ${cmd}（先运行 dsh-web install）"; exit 1; }
 done
+
+# dsh is required for auto-start; check early for clear error
+if ! command -v dsh >/dev/null 2>&1; then
+  echo "[dsh-web] ✗ 未安装 dsh（请先安装 DeepSeek Harness）"
+  exit 1
+fi
 
 mkdir -p "$RC_HOME/logs" "$RC_HOME/run"
 [ -f "$RC_HOME/Caddyfile" ] || cp "$REPO_DIR/etc/Caddyfile" "$RC_HOME/Caddyfile"
 # Auto-start DSH web if enabled and upstream is unreachable
 : "${RC_AUTOSTART_DSH:=true}"
 if [ "$RC_AUTOSTART_DSH" = "true" ]; then
-  CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null)"
+  CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || echo 000)"
   if [ "$CODE" = "000" ]; then
     echo "[dsh-web] DSH web 未启动，正在自动拉起 ..."
     nohup dsh web >>"$RC_HOME/logs/dsh-web.log" 2>&1 &
     i=0
     while [ $i -lt 30 ]; do
       sleep 1
-      CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null)"
+      CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || echo 000)"
       [ "$CODE" != "000" ] && break
       i=$((i + 1))
       [ $((i % 10)) -eq 0 ] && echo "[dsh-web]   ...等待 DSH web 启动（剩余 $((30 - i))s）"
     done
     if [ "$CODE" = "000" ]; then
-      echo "[dsh-web] ✗ DSH web 自动启动失败，请手动执行 dsh web 后重试"
+      echo "[dsh-web] ✗ DSH web 自动启动失败，请查看 $RC_HOME/logs/dsh-web.log 或手动执行 dsh web 后重试"
       exit 1
     fi
     echo "[dsh-web]     DSH web 已就绪"
