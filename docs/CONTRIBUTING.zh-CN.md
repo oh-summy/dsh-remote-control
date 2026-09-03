@@ -26,7 +26,7 @@
 - `bin/status.sh` — 组件状态 + 健康检查
 - `scripts/install.sh` — 下载官方二进制、初始化配置
 
-详细架构见 [docs/architecture.md](docs/architecture.md)。
+详细架构见 [architecture.md](architecture.md)。
 
 ## 基本规则
 

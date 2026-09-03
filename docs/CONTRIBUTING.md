@@ -26,7 +26,7 @@ Browser ──HTTPS──▶ Cloudflare edge (Quick Tunnel)
 - `bin/status.sh` — component status + health checks
 - `scripts/install.sh` — downloads official binaries, inits config
 
-For detailed architecture, see [docs/architecture.md](docs/architecture.md).
+For detailed architecture, see [architecture.md](architecture.md).
 
 ## Ground Rules
 
