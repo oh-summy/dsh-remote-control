@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-为跑在你自己 Mac / Linux 服务器上的 **DeepSeek Harness（DSH）** 提供安全的远程访问：
+让你从任意地点安全访问部署在自己 Mac 或 Linux 服务器上的 **DeepSeek Harness（DSH）**——
 **Cloudflare 隧道 → 密码门 → DSH**，入口地址或服务状态一有变化，**飞书卡片通知**立刻推到你手机。
 
 ```

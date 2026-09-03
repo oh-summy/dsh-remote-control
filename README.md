@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-Secure remote access for **DeepSeek Harness (DSH)** running on your own Mac or Linux server:
+Secure remote access to **DeepSeek Harness (DSH)** deployed on your own Mac or Linux server, from anywhere —
 **Cloudflare Tunnel → password gate → DSH**, with **Feishu (Lark) notifications** pushed to your
 phone whenever the entry URL or service state changes.
 
