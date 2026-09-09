@@ -72,6 +72,9 @@ Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 | `dsh-web password` | Print the access password |
 | `dsh-web url` | Print the current entry URL |
 | `dsh-web install` | Install / repair (binaries, config, credentials, CLI link) |
+| `dsh-web tunnel-setup` | Guide to create Named Tunnel (fixed domain) |
+| `dsh-web rotate-password` | Rotate access password (generate new + restart) |
+| `dsh-web autostart [off]` | Install/remove launchd autostart (macOS) |
 
 ## Configuration — `~/.remote-control/rc.env`
 
@@ -82,6 +85,8 @@ Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 | `RC_FEISHU_OPEN_ID` | — | Feishu open id for bot DM (primary channel) |
 | `RC_FEISHU_WEBHOOK` | — | Group custom-bot webhook (fallback channel) |
 | `RC_NOTIFY_PASSWORD` | `full` | `full` = password pushed as its own message; `mask` = last 4 chars only |
+| `RC_TUNNEL_NAME` | — | Named Tunnel name (optional, for fixed domain) |
+| `RC_TUNNEL_HOSTNAME` | — | Named Tunnel hostname (optional, e.g. `dsh.example.com`) |
 
 Runtime data (password, token, logs) lives in `~/.remote-control/` with `600` permissions and
 never enters git.
@@ -105,6 +110,30 @@ never enters git.
   `dsh-web restart`.
 - Never commit `rc.env`, `password`, `session.secret` or rendered `Caddyfile` — `.gitignore`
   already covers them; CI plus review keep it that way.
+
+## Named Tunnel (fixed domain)
+
+By default, Quick Tunnel assigns a random URL on every start. For a fixed domain:
+
+```bash
+# 1. Login to Cloudflare
+cloudflared tunnel login
+
+# 2. Create tunnel
+cloudflared tunnel create my-dsh-tunnel
+
+# 3. Route DNS
+cloudflared tunnel route dns my-dsh-tunnel dsh.example.com
+
+# 4. Edit ~/.remote-control/rc.env
+RC_TUNNEL_NAME="my-dsh-tunnel"
+RC_TUNNEL_HOSTNAME="dsh.example.com"
+
+# 5. Restart
+dsh-web restart
+```
+
+Or run `dsh-web tunnel-setup` for a guided setup.
 
 ## Architecture
 

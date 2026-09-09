@@ -37,3 +37,52 @@ jobs:
           git ls-files --error-unmatch etc/rc.env 2>/dev/null && exit 1 || true
           git ls-files --error-unmatch .remote-control 2>/dev/null && exit 1 || true
           echo "secret scan ok"
+
+      - name: script permissions
+        run: |
+          # 所有脚本必须有执行权限
+          for f in bin/*.sh scripts/*.sh bin/dsh-web; do
+            [ -x "$f" ] || { echo "missing exec permission: $f"; exit 1; }
+          done
+          echo "script permissions ok"
+
+      - name: required files exist
+        run: |
+          # 关键文件必须存在
+          for f in README.md LICENSE etc/Caddyfile etc/rc.env.tmpl; do
+            [ -f "$f" ] || { echo "missing required file: $f"; exit 1; }
+          done
+          echo "required files ok"
+
+      - name: docs sync check
+        run: |
+          # 检查 README 中的命令是否在 dsh-web 中实现
+          for cmd in start stop restart status logs password url install tunnel-setup rotate-password autostart; do
+            grep -q "^  $cmd)" bin/dsh-web || { echo "command not implemented in dsh-web: $cmd"; exit 1; }
+            grep -q "dsh-web $cmd" README.md || { echo "command not documented in README.md: $cmd"; exit 1; }
+            grep -q "dsh-web $cmd" README.zh-CN.md || { echo "command not documented in README.zh-CN.md: $cmd"; exit 1; }
+          done
+          echo "docs sync ok"
+
+      - name: plist validation
+        run: |
+          # 验证 plist 文件是合法 XML
+          python3 -c "import plistlib; plistlib.load(open('etc/com.dsh-remote-control.plist', 'rb'))" || exit 1
+          echo "plist validation ok"
+
+  test-macos:
+    name: test-macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash syntax
+        run: |
+          for f in bin/*.sh scripts/*.sh bin/dsh-web; do
+            bash -n "$f" || exit 1
+          done
+
+      - name: shellcheck
+        run: |
+          brew install shellcheck
+          shellcheck bin/*.sh scripts/*.sh bin/dsh-web

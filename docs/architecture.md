@@ -26,13 +26,29 @@ Browser ──HTTPS──▶ Cloudflare edge (Quick Tunnel: https://<random>.try
 | `notify-feishu.sh` | `bin/notify-feishu.sh` | Feishu card + plain-text password message |
 | `status.sh` | `bin/status.sh` | Component status + gate/upstream health |
 | `install.sh` | `scripts/install.sh` | Download official binaries, init config, link CLI |
+| `rotate-password.sh` | `scripts/rotate-password.sh` | Rotate access password, restart if running |
+
+## Tunnel modes
+
+### Quick Tunnel (default)
+- Random URL on every start: `https://<random>.trycloudflare.com`
+- No Cloudflare account required
+- Feishu notification required to receive the URL
+
+### Named Tunnel (optional)
+- Fixed domain: `https://dsh.example.com`
+- Requires Cloudflare account + DNS control
+- Setup: `dsh-web tunnel-setup` or manual steps in README
+- Config: set `RC_TUNNEL_NAME` + `RC_TUNNEL_HOSTNAME` in `rc.env`
 
 ## Data flow
 
 1. **Start**: `up.sh` checks credentials → starts auth-server + Caddy → starts cloudflared →
    waits for URL → verifies local gate (302) + auth (200) → starts watchdog → pushes Feishu card
-2. **Runtime**: watchdog monitors cloudflared PID, URL changes, and upstream reachability every 30s
+2. **Runtime**: watchdog monitors cloudflared PID, URL changes, and upstream reachability every 30s;
+   rotates logs when they exceed 1MB (keeps 5 backups)
 3. **Stop**: `down.sh` kills each component by PID → SIGKILL leftovers → verifies port release
+4. **Autostart**: `dsh-web autostart` installs launchd plist on macOS; runs `up.sh` on login
 
 ## Security model
 

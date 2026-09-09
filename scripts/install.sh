@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # remote-control 安装：下载官方预编译二进制（不依赖 brew/apt，Mac 与 Linux 同一机制）
 # 平台支持：macOS / Linux · x86_64 / arm64（Windows 不在官方支持范围）
+# 幂等设计：可安全重复运行，已存在的配置/凭据不会被覆盖
 set -eu
+
+FORCE="${1:-}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RC_HOME="$HOME/.remote-control"
 BIN_DIR="$RC_HOME/bin"
@@ -28,6 +31,9 @@ else
 fi
 
 # ---- cloudflared ----
+if [ "$FORCE" = "--force" ]; then
+  rm -f "$BIN_DIR/cloudflared"
+fi
 if [ -x "$BIN_DIR/cloudflared" ] || command -v cloudflared >/dev/null 2>&1; then
   echo "[dsh-web] cloudflared 已就绪（$([ -x "$BIN_DIR/cloudflared" ] && echo "$BIN_DIR/cloudflared" || echo "系统 PATH")）"
 else
@@ -43,6 +49,9 @@ else
 fi
 
 # ---- caddy（linux 走 GitHub Release；darwin 走官方构建 API——v2.11 起 Release 不再发布 darwin 资产）----
+if [ "$FORCE" = "--force" ]; then
+  rm -f "$BIN_DIR/caddy"
+fi
 if [ -x "$BIN_DIR/caddy" ] || command -v caddy >/dev/null 2>&1; then
   echo "[dsh-web] caddy 已就绪"
 elif [ "$os" = linux ]; then
@@ -97,6 +106,14 @@ case ":$PATH:" in
 esac
 
 export PATH="$BIN_DIR:$PATH"
+
+# 安装验证
+ERR=0
+for cmd in cloudflared caddy python3 curl; do
+  command -v "$cmd" >/dev/null 2>&1 || { echo "[dsh-web] ✗ 验证失败: $cmd 不可用"; ERR=1; }
+done
+[ $ERR -eq 1 ] && { echo "[dsh-web] ✗ 安装不完整，请检查网络后重试"; exit 1; }
+
 echo "[dsh-web] 版本: cloudflared $(cloudflared --version 2>/dev/null | head -1) · caddy $(caddy version 2>/dev/null | head -1)"
 echo ""
 echo "[dsh-web] 安装完成。接下来："
