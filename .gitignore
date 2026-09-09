@@ -6,3 +6,4 @@
 /rc.env
 /Caddyfile
 __pycache__/
+/dist/
