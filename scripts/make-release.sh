@@ -20,7 +20,8 @@ NAME="dsh-remote-control-$VERSION"
 
 mkdir -p "$OUT_DIR"
 # 清理旧产物：含上次中断可能残留的 staging 目录（git archive | tar 会合并进旧目录）
-rm -rf "$OUT_DIR/$NAME"
+# SC2115: ${var:?} 防止变量为空时扩张成 rm -rf /（NAME/OUT_DIR 为空立即 fatal）
+rm -rf "${OUT_DIR:?}/${NAME:?}"
 rm -f "$OUT_DIR/$NAME.tar.gz" "$OUT_DIR/$NAME.tar.gz.sha256"
 
 echo "[make-release] 打包 $TAG ..."
@@ -33,7 +34,8 @@ git archive --format=tar --prefix="$NAME/" "$TAG" \
 
 # 打包
 tar -czf "$OUT_DIR/$NAME.tar.gz" -C "$OUT_DIR" "$NAME"
-rm -rf "$OUT_DIR/$NAME"
+# SC2115: ${var:?} 防止变量为空时扩张成 rm -rf /（NAME/OUT_DIR 为空立即 fatal）
+rm -rf "${OUT_DIR:?}/${NAME:?}"
 
 # 生成校验和
 ( cd "$OUT_DIR" && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
