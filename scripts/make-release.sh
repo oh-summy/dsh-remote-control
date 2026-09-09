@@ -1,46 +1,56 @@
 #!/usr/bin/env bash
 # remote-control · 打包 GitHub Release 资产（源码包，不含二进制）
-# 用法: scripts/make-release.sh [version]   # 默认从最近 tag 读取版本
+# 用法: scripts/make-release.sh [tag]    # 默认从最近 tag 读取版本
 # 产物: dist/dsh-remote-control-<version>.tar.gz + .sha256
-# 说明: install.sh 运行时会自动下载 cloudflared/caddy，故包内不包含二进制
+# 说明: install.sh 运行时会自动下载 cloudflared/caddy，故包内不包含二进制。
+#       使用 git archive 从 commit 打包，保证可复现且不含本地未跟踪文件。
 set -eu
 
 cd "$(dirname "$0")/.."
-VERSION="${1:-$(git describe --tags --abbrev=0)}"
-VERSION="${VERSION#v}"                    # 去掉 v 前缀
+
+# 版本参数：显式传 tag（如 v0.2.0），或取最近 tag
+if [ -n "${1:-}" ]; then
+  TAG="$1"
+else
+  TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD)"
+fi
+VERSION="${TAG#v}"
 OUT_DIR="dist"
 NAME="dsh-remote-control-$VERSION"
-STAGE="$OUT_DIR/$NAME"
 
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
+mkdir -p "$OUT_DIR"
+rm -f "$OUT_DIR/$NAME.tar.gz" "$OUT_DIR/$NAME.tar.gz.sha256"
 
-# 复制需要发布的文件（保持结构）
-echo "[make-release] 打包 v$VERSION ..."
-cp -R bin scripts etc docs "$STAGE/"
-cp README.md README.zh-CN.md CONTRIBUTING.md CONTRIBUTING.zh-CN.md LICENSE .gitignore "$STAGE/"
-# 保留 SECURITY.md
-mkdir -p "$STAGE/.github"
-cp .github/SECURITY.md "$STAGE/.github/"
-
-# 移除运行期临时产物（防御性清理）
-rm -rf "$STAGE"/bin/__pycache__
-rm -f "$STAGE"/etc/rc.env "$STAGE"/etc/Caddyfile   # 渲染后的本地配置不进包
-
-# 确保脚本有执行权限
-chmod +x "$STAGE"/bin/*.sh "$STAGE"/bin/dsh-web \
-  "$STAGE"/scripts/*.sh
+echo "[make-release] 打包 $TAG ..."
+# git archive 白名单：只打 tracked 文件（etc/Caddyfile 是源文件，必须包含）
+git archive --format=tar --prefix="$NAME/" "$TAG" \
+  bin scripts etc docs \
+  README.md README.zh-CN.md CONTRIBUTING.md CONTRIBUTING.zh-CN.md \
+  LICENSE .gitignore .github/SECURITY.md \
+  | tar -xf - -C "$OUT_DIR"
 
 # 打包
 tar -czf "$OUT_DIR/$NAME.tar.gz" -C "$OUT_DIR" "$NAME"
-rm -rf "$STAGE"
+rm -rf "$OUT_DIR/$NAME"
 
 # 生成校验和
 ( cd "$OUT_DIR" && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
+
+# ---- 包内容断言（防回归）----
+echo "[make-release] 校验包内容 ..."
+PKG="$OUT_DIR/$NAME.tar.gz"
+# -Fx：整行精确匹配，避免子串误匹配（如 rc.env.tmpl）
+tar -tzf "$PKG" | grep -Fxq "$NAME/etc/Caddyfile" || { echo "✗ 包内缺少 etc/Caddyfile"; exit 1; }
+tar -tzf "$PKG" | grep -Fxq "$NAME/etc/rc.env" && { echo "✗ 包内不应包含 etc/rc.env"; exit 1; }
+tar -tzf "$PKG" | grep -Fxq "$NAME/scripts/install.sh" || { echo "✗ 包内缺少 scripts/install.sh"; exit 1; }
+for f in bin/up.sh bin/down.sh bin/dsh-web bin/auth-server.py; do
+  tar -tzf "$PKG" | grep -Fxq "$NAME/$f" || { echo "✗ 包内缺少 $f"; exit 1; }
+done
+echo "[make-release] 包内容校验通过"
 
 echo "[make-release] 完成:"
 echo "  $OUT_DIR/$NAME.tar.gz"
 echo "  校验和: $(cat "$OUT_DIR/$NAME.tar.gz.sha256")"
 echo ""
 echo "上传到 GitHub:"
-echo "  gh release upload v$VERSION $OUT_DIR/$NAME.tar.gz $OUT_DIR/$NAME.tar.gz.sha256"
+echo "  gh release upload $TAG $OUT_DIR/$NAME.tar.gz $OUT_DIR/$NAME.tar.gz.sha256 --clobber"

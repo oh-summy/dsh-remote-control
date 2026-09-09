@@ -49,7 +49,8 @@ curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/sc
 ```
 
 该脚本会从 GitHub Releases 下载官方源码包，校验 SHA256 后运行 `install.sh`
-（它会自动下载对应平台/架构的 cloudflared 与 caddy）。全部版本见：
+（它会自动下载对应平台/架构的 cloudflared 与 caddy）。注意：SHA256 属于完整性校验，防下载损坏，
+不构成真实性/防篡改证明（校验和与包同源）。全部版本见：
 <https://github.com/oh-summy/dsh-remote-control/releases>。
 
 默认情况下，`dsh-web start` 会自动检测 DSH web 是否已运行，若未运行则自动拉起。

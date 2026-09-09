@@ -70,6 +70,14 @@ jobs:
           python3 -c "import plistlib; plistlib.load(open('etc/com.dsh-remote-control.plist', 'rb'))" || exit 1
           echo "plist validation ok"
 
+      - name: release package smoke test
+        run: |
+          # 打包冒烟：确保 tar.gz 可生成、含关键文件、不含敏感文件
+          # （用任意占位 tag 打包 HEAD，脚本内置断言会校验内容）
+          bash scripts/make-release.sh HEAD || exit 1
+          ls -la dist/*.tar.gz
+          echo "release package smoke test ok"
+
   test-macos:
     name: test-macos
     runs-on: macos-latest

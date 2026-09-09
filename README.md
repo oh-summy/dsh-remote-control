@@ -50,9 +50,10 @@ curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/sc
 curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.0
 ```
 
-The script downloads the official source tarball from GitHub Releases, verifies its SHA256,
-and runs `install.sh` (which fetches cloudflared/caddy for your OS/arch). All releases:
-<https://github.com/oh-summy/dsh-remote-control/releases>.
+The script downloads the official source tarball from GitHub Releases, verifies its SHA256
+(integrity check — guards against corrupted downloads; it is not an authenticity proof, since
+the checksum ships from the same release), and runs `install.sh` (which fetches cloudflared/caddy
+for your OS/arch). All releases: <https://github.com/oh-summy/dsh-remote-control/releases>.
 
 By default, `dsh-web start` auto-detects if DSH web is not running and starts it
 automatically. To disable this behavior, set `RC_AUTOSTART_DSH=false` in `~/.remote-control/rc.env`.
