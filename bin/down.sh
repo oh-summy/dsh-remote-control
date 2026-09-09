@@ -24,8 +24,15 @@ for name in watchdog cloudflared caddy auth; do
 done
 
 # 兜底：精确匹配命令行清理残留（仅本用户的隧道/反代进程）
+# Quick Tunnel: cloudflared tunnel --url ...
+# Named Tunnel: cloudflared tunnel --no-autoupdate run <name>
 if pkill -f "cloudflared tunnel --url http://$RC_LISTEN --no-autoupdate" 2>/dev/null; then
-  echo "[dsh-web]   清理残留 cloudflared"
+  echo "[dsh-web]   清理残留 cloudflared (Quick Tunnel)"
+fi
+if [ -n "${RC_TUNNEL_NAME:-}" ]; then
+  if pkill -f "cloudflared tunnel --no-autoupdate run $RC_TUNNEL_NAME" 2>/dev/null; then
+    echo "[dsh-web]   清理残留 cloudflared (Named Tunnel: $RC_TUNNEL_NAME)"
+  fi
 fi
 
 sleep 1
@@ -34,6 +41,10 @@ sleep 1
 check_leftover() {
   pgrep -f "caddy run --config $RC_HOME/Caddyfile" 2>/dev/null
   pgrep -f "cloudflared tunnel --url http://$RC_LISTEN" 2>/dev/null
+  # Named Tunnel 残留检查
+  if [ -n "${RC_TUNNEL_NAME:-}" ]; then
+    pgrep -f "cloudflared tunnel --no-autoupdate run $RC_TUNNEL_NAME" 2>/dev/null
+  fi
   pgrep -f "python3.*$REPO_DIR/bin/auth-server.py" 2>/dev/null
 }
 leftover="$(check_leftover)"

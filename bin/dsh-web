@@ -90,22 +90,33 @@ case "$cmd" in
     "$REPO_DIR/scripts/rotate-password.sh"
     ;;
   autostart)
+    # 平台检查
+    [ "$(uname -s)" = "Darwin" ] || { echo "[dsh-web] ✗ autostart 仅支持 macOS"; exit 1; }
     PLIST="$HOME/Library/LaunchAgents/com.dsh-remote-control.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
     if [ "${2:-}" = "off" ]; then
       launchctl unload "$PLIST" 2>/dev/null || true
       rm -f "$PLIST"
       echo "[dsh-web] ✓ 已卸载开机自启"
     else
-      sed -e "s#__REPO_DIR__#$REPO_DIR#g" -e "s#__RC_HOME__#$HOME/.remote-control#g" \
-        "$REPO_DIR/etc/com.dsh-remote-control.plist" > "$PLIST"
+      # 使用 | 作为 sed 分隔符避免 # 冲突
+      sed -e "s|__REPO_DIR__|$REPO_DIR|g" -e "s|__RC_HOME__|$HOME/.remote-control|g" \
+        "$REPO_DIR/etc/com.dsh-remote-control.plist" > "$PLIST" || {
+        echo "[dsh-web] ✗ 生成 plist 失败"
+        exit 1
+      }
       launchctl unload "$PLIST" 2>/dev/null || true
-      launchctl load "$PLIST"
-      echo "[dsh-web] ✓ 已安装开机自启（launchd）"
-      echo "[dsh-web]   关闭: dsh-web autostart off"
+      if launchctl load "$PLIST" 2>/dev/null; then
+        echo "[dsh-web] ✓ 已安装开机自启（launchd）"
+        echo "[dsh-web]   关闭: dsh-web autostart off"
+      else
+        echo "[dsh-web] ✗ launchctl load 失败"
+        exit 1
+      fi
     fi
     ;;
   *)
-    sed -n '2,15p' "$SOURCE" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$SOURCE" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

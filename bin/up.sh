@@ -92,20 +92,53 @@ nohup caddy run --config "$RC_HOME/Caddyfile" --adapter caddyfile \
 echo $! > "$RC_HOME/run/caddy.pid"
 
 # 选择隧道模式：Named Tunnel（固定域名）或 Quick Tunnel（随机 URL）
+# 检查配置完整性：只配一个则报错
+if [ -n "${RC_TUNNEL_NAME:-}" ] && [ -z "${RC_TUNNEL_HOSTNAME:-}" ]; then
+  echo "[dsh-web] ✗ 配置错误: 设置了 RC_TUNNEL_NAME 但缺少 RC_TUNNEL_HOSTNAME"
+  exit 1
+fi
+if [ -z "${RC_TUNNEL_NAME:-}" ] && [ -n "${RC_TUNNEL_HOSTNAME:-}" ]; then
+  echo "[dsh-web] ✗ 配置错误: 设置了 RC_TUNNEL_HOSTNAME 但缺少 RC_TUNNEL_NAME"
+  exit 1
+fi
+
 if [ -n "${RC_TUNNEL_NAME:-}" ] && [ -n "${RC_TUNNEL_HOSTNAME:-}" ]; then
+  # 简单 hostname 格式校验
+  case "$RC_TUNNEL_HOSTNAME" in
+    *[!a-zA-Z0-9.-]*|""|.*|*-)
+      echo "[dsh-web] ✗ RC_TUNNEL_HOSTNAME 格式无效: $RC_TUNNEL_HOSTNAME"
+      exit 1
+      ;;
+  esac
   echo "[dsh-web] 3/4 建立 Named Tunnel（固定域名: $RC_TUNNEL_HOSTNAME）..."
-  # Named Tunnel 使用配置文件，credentials 文件由 cloudflared 管理
   : > "$RC_HOME/logs/cloudflared.log"
   nohup cloudflared tunnel --no-autoupdate run "$RC_TUNNEL_NAME" \
     >>"$RC_HOME/logs/cloudflared.log" 2>&1 &
   CFPID=$!
   echo "$CFPID" > "$RC_HOME/run/cloudflared.pid"
-  # Named Tunnel URL 固定，无需等待解析
   URL="https://$RC_TUNNEL_HOSTNAME"
-  # 短暂等待确认进程存活
-  sleep 2
+  # 等待隧道真正建立（检查 Registered tunnel connection 或错误）
+  i=0
+  while [ $i -lt 30 ]; do
+    # 检查错误
+    if grep -q "error\|failed\|unable" "$RC_HOME/logs/cloudflared.log" 2>/dev/null; then
+      echo "[dsh-web] ✗ Named Tunnel 启动失败:"
+      tail -5 "$RC_HOME/logs/cloudflared.log"
+      "$REPO_DIR/bin/down.sh" >/dev/null 2>&1
+      exit 1
+    fi
+    # 检查成功标记
+    if grep -q "Registered tunnel connection" "$RC_HOME/logs/cloudflared.log" 2>/dev/null; then
+      break
+    fi
+    kill -0 "$CFPID" 2>/dev/null || break
+    i=$((i + 1))
+    [ $((i % 10)) -eq 0 ] && echo "[dsh-web]   ...等待隧道连接（剩余 $((30 - i))s）"
+    sleep 1
+  done
+  # 最终验证进程存活
   kill -0 "$CFPID" 2>/dev/null || {
-    echo "[dsh-web] ✗ Named Tunnel 启动失败，回滚已启动的组件"
+    echo "[dsh-web] ✗ Named Tunnel 进程退出，回滚已启动的组件"
     "$REPO_DIR/bin/down.sh" >/dev/null 2>&1
     echo "[dsh-web]   排查: dsh-web logs cloudflared"
     exit 1

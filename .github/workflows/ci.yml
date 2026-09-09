@@ -58,9 +58,17 @@ jobs:
         run: |
           # 检查 README 中的命令是否在 dsh-web 中实现
           for cmd in start stop restart status logs password url install tunnel-setup rotate-password autostart; do
-            grep -q "^  $cmd)" bin/dsh-web || { echo "command not implemented: $cmd"; exit 1; }
+            grep -q "^  $cmd)" bin/dsh-web || { echo "command not implemented in dsh-web: $cmd"; exit 1; }
+            grep -q "dsh-web $cmd" README.md || { echo "command not documented in README.md: $cmd"; exit 1; }
+            grep -q "dsh-web $cmd" README.zh-CN.md || { echo "command not documented in README.zh-CN.md: $cmd"; exit 1; }
           done
           echo "docs sync ok"
+
+      - name: plist validation
+        run: |
+          # 验证 plist 文件是合法 XML
+          python3 -c "import plistlib; plistlib.load(open('etc/com.dsh-remote-control.plist', 'rb'))" || exit 1
+          echo "plist validation ok"
 
   test-macos:
     name: test-macos

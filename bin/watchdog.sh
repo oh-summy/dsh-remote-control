@@ -12,16 +12,18 @@ LAST_URL="$(cat "$RC_HOME/run/url" 2>/dev/null || echo '')"
 LAST_DOWN=0
 GATE_DOWN=0
 
-# 日志轮转：超过 1MB 时轮转，保留最近 5 个
+# 日志轮转：超过 1MB 时轮转，保留最近 5 个（copytruncate 保持 fd）
 rotate_logs() {
   for log in "$RC_HOME/logs"/*.log; do
     [ -f "$log" ] || continue
     size=$(stat -f%z "$log" 2>/dev/null || stat -c%s "$log" 2>/dev/null || echo 0)
     if [ "$size" -gt 1048576 ]; then
+      # 先轮转旧文件
       for i in 4 3 2 1; do
         [ -f "$log.$i" ] && mv "$log.$i" "$log.$((i+1))"
       done
-      mv "$log" "$log.1"
+      # copytruncate: 复制后截断，保持 inode 不变，daemon 继续写入
+      cp "$log" "$log.1"
       : > "$log"
       echo "$(date '+%F %T') rotated: $(basename "$log")" >> "$RC_HOME/logs/watchdog.log"
     fi

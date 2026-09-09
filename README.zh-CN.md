@@ -69,6 +69,9 @@ dsh-web start
 | `dsh-web password` | 打印访问密码 |
 | `dsh-web url` | 打印当前入口 URL |
 | `dsh-web install` | 安装/修复（二进制、配置、凭据、命令链接） |
+| `dsh-web tunnel-setup` | 引导创建 Named Tunnel（固定域名） |
+| `dsh-web rotate-password` | 轮换访问密码（生成新密码并重启服务） |
+| `dsh-web autostart [off]` | 安装/卸载 launchd 开机自启（macOS） |
 
 ## 配置——`~/.remote-control/rc.env`
 
@@ -79,6 +82,8 @@ dsh-web start
 | `RC_FEISHU_OPEN_ID` | — | 飞书私聊通知的 open id（主通道） |
 | `RC_FEISHU_WEBHOOK` | — | 群自定义机器人 Webhook（兜底通道） |
 | `RC_NOTIFY_PASSWORD` | `full` | `full` = 密码单独成条推送；`mask` = 只推后 4 位 |
+| `RC_TUNNEL_NAME` | — | Named Tunnel 名称（可选，用于固定域名） |
+| `RC_TUNNEL_HOSTNAME` | — | Named Tunnel 域名（可选，如 `dsh.example.com`） |
 
 运行时数据（密码、令牌、日志）都在 `~/.remote-control/`，权限 600，永不进 git。
 
@@ -98,6 +103,30 @@ dsh-web start
   （`scripts/gen-password.sh`）和/或修改 `~/.remote-control/session.secret`，然后 `dsh-web restart`。
 - 严禁提交 `rc.env`、`password`、`session.secret` 和渲染后的 `Caddyfile`——`.gitignore` 已
   覆盖，CI 与评审双重把关。
+
+## Named Tunnel（固定域名）
+
+默认情况下，Quick Tunnel 每次启动分配随机 URL。如需固定域名：
+
+```bash
+# 1. 登录 Cloudflare
+cloudflared tunnel login
+
+# 2. 创建隧道
+cloudflared tunnel create my-dsh-tunnel
+
+# 3. 配置 DNS 路由
+cloudflared tunnel route dns my-dsh-tunnel dsh.example.com
+
+# 4. 编辑 ~/.remote-control/rc.env
+RC_TUNNEL_NAME="my-dsh-tunnel"
+RC_TUNNEL_HOSTNAME="dsh.example.com"
+
+# 5. 重启
+dsh-web restart
+```
+
+或运行 `dsh-web tunnel-setup` 查看引导步骤。
 
 ## 架构设计
 
