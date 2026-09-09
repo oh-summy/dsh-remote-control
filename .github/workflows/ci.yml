@@ -57,7 +57,7 @@ jobs:
       - name: docs sync check
         run: |
           # 检查 README 中的命令是否在 dsh-web 中实现
-          for cmd in start stop restart status logs password url install; do
+          for cmd in start stop restart status logs password url install tunnel-setup rotate-password autostart; do
             grep -q "^  $cmd)" bin/dsh-web || { echo "command not implemented: $cmd"; exit 1; }
           done
           echo "docs sync ok"
