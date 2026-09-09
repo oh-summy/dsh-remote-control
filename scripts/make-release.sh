@@ -19,6 +19,8 @@ OUT_DIR="dist"
 NAME="dsh-remote-control-$VERSION"
 
 mkdir -p "$OUT_DIR"
+# 清理旧产物：含上次中断可能残留的 staging 目录（git archive | tar 会合并进旧目录）
+rm -rf "$OUT_DIR/$NAME"
 rm -f "$OUT_DIR/$NAME.tar.gz" "$OUT_DIR/$NAME.tar.gz.sha256"
 
 echo "[make-release] 打包 $TAG ..."

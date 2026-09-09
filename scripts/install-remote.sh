@@ -27,10 +27,15 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # 解析真实版本号：latest 通过 HTTP redirect 解析（免 API quota），
 # github.com/<repo>/releases/latest 会 302 到 .../releases/tag/vX.Y.Z
 if [ "$VERSION" = "latest" ]; then
-  FINAL_URL="$(curl -sIL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")"
+  # || true 防止 set -e 在 curl 失败时直接退出（那样友好提示不会执行）
+  FINAL_URL="$(curl -sIL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" || true)"
   VERSION="${FINAL_URL##*/}"
-  [ "$VERSION" != "$FINAL_URL" ] && [ -n "$VERSION" ] || { echo "[dsh-web] ✗ 无法解析最新版本（检查网络）"; exit 1; }
+  if [ -z "$VERSION" ] || [ "$VERSION" = "$FINAL_URL" ]; then
+    echo "[dsh-web] ✗ 无法解析最新版本（检查网络）"
+    exit 1
+  fi
 fi
+case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac   # 自动补 v 前缀（容错手输 0.2.0）
 TAG="$VERSION"                          # 保留 v 前缀用于 URL
 VERSION="${VERSION#v}"                    # 去 v 用于资产文件名
 BASE="https://github.com/$REPO/releases/download/$TAG"

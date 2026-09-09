@@ -75,6 +75,9 @@ jobs:
           # 打包冒烟：确保 tar.gz 可生成、含关键文件、不含敏感文件
           # （用任意占位 tag 打包 HEAD，脚本内置断言会校验内容）
           bash scripts/make-release.sh HEAD || exit 1
+          # 兜底断言：新脚本必须在包内（防 make-release 白名单遗漏）
+          tar -tzf dist/*.tar.gz | grep -q 'install-remote.sh' || { echo "install-remote.sh missing in package"; exit 1; }
+          tar -tzf dist/*.tar.gz | grep -q 'make-release.sh' || { echo "make-release.sh missing in package"; exit 1; }
           ls -la dist/*.tar.gz
           echo "release package smoke test ok"
 
