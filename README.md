@@ -47,7 +47,7 @@ Prefer a GitHub Release (no git):
 curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash
 
 # or a specific version
-curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.0
+curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.1
 ```
 
 The script downloads the official source tarball from GitHub Releases, verifies its SHA256

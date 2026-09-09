@@ -45,7 +45,7 @@ scripts/install.sh     # 下载官方 cloudflared/caddy 二进制，生成密码
 curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash
 
 # 或指定版本
-curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.0
+curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.1
 ```
 
 该脚本会从 GitHub Releases 下载官方源码包，校验 SHA256 后运行 `install.sh`
