@@ -91,30 +91,51 @@ nohup caddy run --config "$RC_HOME/Caddyfile" --adapter caddyfile \
   >>"$RC_HOME/logs/caddy.stdout.log" 2>&1 &
 echo $! > "$RC_HOME/run/caddy.pid"
 
-echo "[dsh-web] 3/4 建立 Cloudflare 隧道（Quick Tunnel，URL 每次随机）..."
-# 清空旧隧道日志，避免 URL 解析抓到上一次连接的旧地址
-: > "$RC_HOME/logs/cloudflared.log"
-nohup cloudflared tunnel --url "http://$RC_LISTEN" --no-autoupdate \
-  >>"$RC_HOME/logs/cloudflared.log" 2>&1 &
-CFPID=$!
-echo "$CFPID" > "$RC_HOME/run/cloudflared.pid"
+# 选择隧道模式：Named Tunnel（固定域名）或 Quick Tunnel（随机 URL）
+if [ -n "${RC_TUNNEL_NAME:-}" ] && [ -n "${RC_TUNNEL_HOSTNAME:-}" ]; then
+  echo "[dsh-web] 3/4 建立 Named Tunnel（固定域名: $RC_TUNNEL_HOSTNAME）..."
+  # Named Tunnel 使用配置文件，credentials 文件由 cloudflared 管理
+  : > "$RC_HOME/logs/cloudflared.log"
+  nohup cloudflared tunnel --no-autoupdate run "$RC_TUNNEL_NAME" \
+    >>"$RC_HOME/logs/cloudflared.log" 2>&1 &
+  CFPID=$!
+  echo "$CFPID" > "$RC_HOME/run/cloudflared.pid"
+  # Named Tunnel URL 固定，无需等待解析
+  URL="https://$RC_TUNNEL_HOSTNAME"
+  # 短暂等待确认进程存活
+  sleep 2
+  kill -0 "$CFPID" 2>/dev/null || {
+    echo "[dsh-web] ✗ Named Tunnel 启动失败，回滚已启动的组件"
+    "$REPO_DIR/bin/down.sh" >/dev/null 2>&1
+    echo "[dsh-web]   排查: dsh-web logs cloudflared"
+    exit 1
+  }
+else
+  echo "[dsh-web] 3/4 建立 Cloudflare 隧道（Quick Tunnel，URL 每次随机）..."
+  # 清空旧隧道日志，避免 URL 解析抓到上一次连接的旧地址
+  : > "$RC_HOME/logs/cloudflared.log"
+  nohup cloudflared tunnel --url "http://$RC_LISTEN" --no-autoupdate \
+    >>"$RC_HOME/logs/cloudflared.log" 2>&1 &
+  CFPID=$!
+  echo "$CFPID" > "$RC_HOME/run/cloudflared.pid"
 
-# 等待 URL（最长 45s，每 10s 汇报一次剩余时间）
-URL=""
-i=0
-while [ $i -lt 45 ]; do
-  URL="$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$RC_HOME/logs/cloudflared.log" 2>/dev/null | tail -1)"
-  [ -n "$URL" ] && break
-  kill -0 "$CFPID" 2>/dev/null || break
-  i=$((i + 1))
-  [ $((i % 10)) -eq 0 ] && echo "[dsh-web]   ...等待隧道 URL（剩余 $((45 - i))s）"
-  sleep 1
-done
-if [ -z "$URL" ]; then
-  echo "[dsh-web] ✗ 未获取到隧道 URL，回滚已启动的组件"
-  "$REPO_DIR/bin/down.sh" >/dev/null 2>&1
-  echo "[dsh-web]   排查: dsh-web logs cloudflared"
-  exit 1
+  # 等待 URL（最长 45s，每 10s 汇报一次剩余时间）
+  URL=""
+  i=0
+  while [ $i -lt 45 ]; do
+    URL="$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$RC_HOME/logs/cloudflared.log" 2>/dev/null | tail -1)"
+    [ -n "$URL" ] && break
+    kill -0 "$CFPID" 2>/dev/null || break
+    i=$((i + 1))
+    [ $((i % 10)) -eq 0 ] && echo "[dsh-web]   ...等待隧道 URL（剩余 $((45 - i))s）"
+    sleep 1
+  done
+  if [ -z "$URL" ]; then
+    echo "[dsh-web] ✗ 未获取到隧道 URL，回滚已启动的组件"
+    "$REPO_DIR/bin/down.sh" >/dev/null 2>&1
+    echo "[dsh-web]   排查: dsh-web logs cloudflared"
+    exit 1
+  fi
 fi
 echo "$URL" > "$RC_HOME/run/url"
 
@@ -147,5 +168,5 @@ echo $! > "$RC_HOME/run/watchdog.pid"
 
 echo ""
 echo "[dsh-web] ✅ 远程入口: $URL"
-echo "[dsh-web]    密码: $(cat "$RC_HOME/password")"
+echo "[dsh-web]    密码: $(cat "$RC_HOME/password" 2>/dev/null || echo '(见 ~/.remote-control/password)')"
 echo "[dsh-web]    通知: $([ -n "${RC_FEISHU_OPEN_ID:-}" ] || [ -n "${RC_FEISHU_WEBHOOK:-}" ] && echo 已推送飞书 || echo '未配置（rc.env 里填 RC_FEISHU_OPEN_ID）')"

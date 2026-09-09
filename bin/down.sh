@@ -34,7 +34,7 @@ sleep 1
 check_leftover() {
   pgrep -f "caddy run --config $RC_HOME/Caddyfile" 2>/dev/null
   pgrep -f "cloudflared tunnel --url http://$RC_LISTEN" 2>/dev/null
-  pgrep -f "$REPO_DIR/bin/auth-server.py" 2>/dev/null
+  pgrep -f "python3.*$REPO_DIR/bin/auth-server.py" 2>/dev/null
 }
 leftover="$(check_leftover)"
 if [ -n "$leftover" ]; then

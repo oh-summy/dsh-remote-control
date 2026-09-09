@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # dsh-web — remote control 一站式命令
-# 用法: dsh-web start|stop|restart|status|logs|password|url|install
-#   start     启动全链路，终端打印 URL + 密码后返回（通知照常推飞书）
-#   stop      停止全链路
-#   restart   停止并重新启动（URL 会变，飞书会推新卡片）
-#   status    查看各组件状态
-#   logs      dsh-web logs [caddy|cloudflared|auth|watchdog|notify]  尾部日志
-#   password  打印访问密码
-#   url       打印当前入口 URL
-#   install   安装/修复（依赖、配置、凭据、命令行链接）
+# 用法: dsh-web start|stop|restart|status|logs|password|url|install|tunnel-setup|rotate-password
+#   start           启动全链路，终端打印 URL + 密码后返回（通知照常推飞书）
+#   stop            停止全链路
+#   restart         停止并重新启动（URL 会变，飞书会推新卡片）
+#   status          查看各组件状态
+#   logs            dsh-web logs [caddy|cloudflared|auth|watchdog|notify]  尾部日志
+#   password        打印访问密码
+#   url             打印当前入口 URL
+#   install         安装/修复（依赖、配置、凭据、命令行链接）
+#   tunnel-setup    引导创建 Named Tunnel（固定域名）
+#   rotate-password 轮换访问密码（生成新密码并重启服务）
+#   autostart       安装/卸载 launchd 开机自启（Mac）
 set -u
 
 # 兼容经由 symlink（PATH）调用：解析真实路径定位仓库
@@ -49,7 +52,7 @@ case "$cmd" in
           shown=1
         fi
       done
-      [ "$shown" = "0" ] && echo "(暂无 caddy 日志)"
+      [ "$shown" = "0" ] && echo "(暂无 caddy 日志 — caddy.log 仅在 WARN 及以上级别产生，无警告时可能不存在)"
     else
       case "$name" in
         cloudflared) f="$HOME/.remote-control/logs/cloudflared.log" ;;
@@ -64,8 +67,45 @@ case "$cmd" in
   password) cat "$HOME/.remote-control/password" ;;
   url)      cat "$HOME/.remote-control/run/url" 2>/dev/null || echo "(未启动)" ;;
   install)  exec "$REPO_DIR/scripts/install.sh" ;;
+  tunnel-setup)
+    echo "[dsh-web] Named Tunnel 设置向导"
+    echo ""
+    echo "步骤 1: 登录 Cloudflare（如未登录）"
+    echo "  cloudflared tunnel login"
+    echo ""
+    echo "步骤 2: 创建隧道"
+    echo "  cloudflared tunnel create <隧道名>"
+    echo ""
+    echo "步骤 3: 配置 DNS 路由"
+    echo "  cloudflared tunnel route dns <隧道名> <域名>"
+    echo ""
+    echo "步骤 4: 编辑 ~/.remote-control/rc.env，设置："
+    echo "  RC_TUNNEL_NAME=<隧道名>"
+    echo "  RC_TUNNEL_HOSTNAME=<域名>"
+    echo ""
+    echo "步骤 5: 重启服务"
+    echo "  dsh-web restart"
+    ;;
+  rotate-password)
+    "$REPO_DIR/scripts/rotate-password.sh"
+    ;;
+  autostart)
+    PLIST="$HOME/Library/LaunchAgents/com.dsh-remote-control.plist"
+    if [ "${2:-}" = "off" ]; then
+      launchctl unload "$PLIST" 2>/dev/null || true
+      rm -f "$PLIST"
+      echo "[dsh-web] ✓ 已卸载开机自启"
+    else
+      sed -e "s#__REPO_DIR__#$REPO_DIR#g" -e "s#__RC_HOME__#$HOME/.remote-control#g" \
+        "$REPO_DIR/etc/com.dsh-remote-control.plist" > "$PLIST"
+      launchctl unload "$PLIST" 2>/dev/null || true
+      launchctl load "$PLIST"
+      echo "[dsh-web] ✓ 已安装开机自启（launchd）"
+      echo "[dsh-web]   关闭: dsh-web autostart off"
+    fi
+    ;;
   *)
-    sed -n '2,12p' "$SOURCE" | sed 's/^# \{0,1\}//'
+    sed -n '2,15p' "$SOURCE" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
