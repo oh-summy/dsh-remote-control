@@ -98,7 +98,8 @@ dsh-web start
 | `RC_LISTEN` | `127.0.0.1:4080` | Caddy 监听地址（只绑回环） |
 | `RC_FEISHU_OPEN_ID` | — | 飞书私聊通知的 open id（主通道） |
 | `RC_FEISHU_WEBHOOK` | — | 群自定义机器人 Webhook（兜底通道） |
-| `RC_NOTIFY_PASSWORD` | `full` | `full` = 密码单独成条推送；`mask` = 只推后 4 位 |
+| `RC_NOTIFY_PASSWORD` | `full` | `full` = 密码单独成条推送；`mask` = 只推后 4 位；其他值 = 不发送密码消息 |
+| `RC_NOTIFY_NOTE` | — | 通知卡片顶部自定义说明（显示在访问地址之前）；每次通知实时读取，改后无需重启 |
 | `RC_TUNNEL_NAME` | — | Named Tunnel 名称（可选，用于固定域名） |
 | `RC_TUNNEL_HOSTNAME` | — | Named Tunnel 域名（可选，如 `dsh.example.com`） |
 

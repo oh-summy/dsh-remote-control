@@ -27,15 +27,18 @@ case "$EVENT" in
   *)                COLOR=grey;  TITLE="$EVENT" ;;
 esac
 
-# 卡片 JSON（URL 纯文本、前后空行，无代码块）
-CARD="$(python3 - "$TITLE" "$COLOR" "$URL" "$RHOST" "$NOW" "$EVENT" << 'PYEOF'
+# 卡片 JSON（单 div：访问地址与 URL 之间仅一行空行；可选自定义说明置顶）
+CARD="$(python3 - "$TITLE" "$COLOR" "$URL" "$RHOST" "$NOW" "$EVENT" "${RC_NOTIFY_NOTE:-}" << 'PYEOF'
 import json, sys
-title, color, url, host, now, event = sys.argv[1:7]
+title, color, url, host, now, event, note = sys.argv[1:8]
 
 elements = []
+# 用户自定义说明（rc.env 的 RC_NOTIFY_NOTE），显示在卡片最上方、访问地址之前
+if note:
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": note}})
 if url:
-    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**访问地址**"}})
-    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "\n\n" + url + "\n\n"}})
+    # 单 div：div 间距 + URL 自带的 \n\n 之前会叠出多行空行
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**访问地址**\n\n" + url}})
     elements.append({"tag": "action", "actions": [
         {"tag": "button", "text": {"tag": "plain_text", "content": "打开 DSH"},
          "type": "primary", "url": url}]})
@@ -66,16 +69,28 @@ if [ -n "${RC_FEISHU_OPEN_ID:-}" ] && command -v lark-cli >/dev/null 2>&1; then
     send "dm-fail resp=$(printf '%s' "$RESP" | head -c 200)"
   fi
 
-  # 密码：单独一条纯文本消息，内容只有密码本身（仅 started/changed，且 full 模式）
-  if [ "${RC_NOTIFY_PASSWORD:-full}" = "full" ] && [ -f "$RC_HOME/password" ] \
+  # 密码：单独一条消息（仅 started/changed）。
+  # full=完整密码（纯文本，方便长按整条复制）；mask=只带后 4 位；其他值=不发送
+  if [ -f "$RC_HOME/password" ] \
      && { [ "$EVENT" = "remote.started" ] || [ "$EVENT" = "remote.changed" ]; }; then
-    PW="$(cat "$RC_HOME/password")"
-    RESP2="$(lark-cli im +messages-send --as bot --user-id "$RC_FEISHU_OPEN_ID" \
-      --text "$PW" --json 2>&1)"
-    if printf '%s' "$RESP2" | grep -q '"ok": true'; then
-      send "dm-pw-ok"
-    else
-      send "dm-pw-fail resp=$(printf '%s' "$RESP2" | head -c 120)"
+    case "${RC_NOTIFY_PASSWORD:-full}" in
+      full)
+        PW="$(cat "$RC_HOME/password")" ;;
+      mask)
+        # 先去换行再取后 4 字节：密码文件无论是否带结尾换行都恰好取到末 4 位
+        LAST4="$(tr -d '\n' < "$RC_HOME/password" | tail -c 4)"
+        PW="访问密码已更新（后 4 位: $LAST4），完整密码见本机 ~/.remote-control/password" ;;
+      *)
+        PW="" ;;
+    esac
+    if [ -n "$PW" ]; then
+      RESP2="$(lark-cli im +messages-send --as bot --user-id "$RC_FEISHU_OPEN_ID" \
+        --text "$PW" --json 2>&1)"
+      if printf '%s' "$RESP2" | grep -q '"ok": true'; then
+        send "dm-pw-ok"
+      else
+        send "dm-pw-fail resp=$(printf '%s' "$RESP2" | head -c 120)"
+      fi
     fi
   fi
   exit 0

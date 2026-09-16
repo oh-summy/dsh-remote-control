@@ -101,7 +101,8 @@ Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 | `RC_LISTEN` | `127.0.0.1:4080` | Caddy listen address (loopback only) |
 | `RC_FEISHU_OPEN_ID` | — | Feishu open id for bot DM (primary channel) |
 | `RC_FEISHU_WEBHOOK` | — | Group custom-bot webhook (fallback channel) |
-| `RC_NOTIFY_PASSWORD` | `full` | `full` = password pushed as its own message; `mask` = last 4 chars only |
+| `RC_NOTIFY_PASSWORD` | `full` | `full` = password pushed as its own message; `mask` = last 4 chars only; any other value = no password message |
+| `RC_NOTIFY_NOTE` | — | Custom text at the top of the notification card (above the URL); re-read on every notify, no restart needed |
 | `RC_TUNNEL_NAME` | — | Named Tunnel name (optional, for fixed domain) |
 | `RC_TUNNEL_HOSTNAME` | — | Named Tunnel hostname (optional, e.g. `dsh.example.com`) |
 
