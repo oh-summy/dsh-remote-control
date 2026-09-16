@@ -66,16 +66,28 @@ if [ -n "${RC_FEISHU_OPEN_ID:-}" ] && command -v lark-cli >/dev/null 2>&1; then
     send "dm-fail resp=$(printf '%s' "$RESP" | head -c 200)"
   fi
 
-  # 密码：单独一条纯文本消息，内容只有密码本身（仅 started/changed，且 full 模式）
-  if [ "${RC_NOTIFY_PASSWORD:-full}" = "full" ] && [ -f "$RC_HOME/password" ] \
+  # 密码：单独一条消息（仅 started/changed）。
+  # full=完整密码（纯文本，方便长按整条复制）；mask=只带后 4 位；其他值=不发送
+  if [ -f "$RC_HOME/password" ] \
      && { [ "$EVENT" = "remote.started" ] || [ "$EVENT" = "remote.changed" ]; }; then
-    PW="$(cat "$RC_HOME/password")"
-    RESP2="$(lark-cli im +messages-send --as bot --user-id "$RC_FEISHU_OPEN_ID" \
-      --text "$PW" --json 2>&1)"
-    if printf '%s' "$RESP2" | grep -q '"ok": true'; then
-      send "dm-pw-ok"
-    else
-      send "dm-pw-fail resp=$(printf '%s' "$RESP2" | head -c 120)"
+    case "${RC_NOTIFY_PASSWORD:-full}" in
+      full)
+        PW="$(cat "$RC_HOME/password")" ;;
+      mask)
+        # password 文件末尾带换行：取后 5 字节再去掉换行即最后 4 个字符
+        LAST4="$(tail -c 5 "$RC_HOME/password" | tr -d '\n')"
+        PW="访问密码已更新（后 4 位: $LAST4），完整密码见本机 ~/.remote-control/password" ;;
+      *)
+        PW="" ;;
+    esac
+    if [ -n "$PW" ]; then
+      RESP2="$(lark-cli im +messages-send --as bot --user-id "$RC_FEISHU_OPEN_ID" \
+        --text "$PW" --json 2>&1)"
+      if printf '%s' "$RESP2" | grep -q '"ok": true'; then
+        send "dm-pw-ok"
+      else
+        send "dm-pw-fail resp=$(printf '%s' "$RESP2" | head -c 120)"
+      fi
     fi
   fi
   exit 0
