@@ -50,6 +50,20 @@ if [ "$RC_AUTOSTART_DSH" = "true" ]; then
   fi
 fi
 
+# 提取当前 DSH launch token 到状态文件：auth-server 登录时优先读它。
+# 放在状态文件而不是只扫日志，是因为 watchdog 会 copytruncate 轮转日志，
+# token 行可能被搬进轮转副本；没找到则清掉旧状态（auth-server 会回退扫日志）
+RC_DSH_TOK=""
+if [ -f "$RC_HOME/logs/dsh-web.log" ]; then
+  RC_DSH_TOK="$(grep -oE '[?&]token=[A-Za-z0-9_-]+' "$RC_HOME/logs/dsh-web.log" 2>/dev/null | tail -1 | cut -d= -f2)"
+fi
+if [ -n "$RC_DSH_TOK" ]; then
+  printf '%s\n' "$RC_DSH_TOK" > "$RC_HOME/run/dsh-token.tmp" && \
+    mv "$RC_HOME/run/dsh-token.tmp" "$RC_HOME/run/dsh-token"
+else
+  rm -f "$RC_HOME/run/dsh-token"
+fi
+
 alive=0
 for name in watchdog cloudflared caddy auth; do
   f="$RC_HOME/run/$name.pid"

@@ -77,5 +77,14 @@ while true; do
   elif [ "$CODE" != "000" ] && [ "$LAST_DOWN" = "1" ]; then
     "$REPO_DIR/bin/notify-feishu.sh" "remote.recovered（上游已恢复）"
     LAST_DOWN=0
+    # 上游恢复通常意味着 DSH 重启过，launch token 已轮换——刷新状态文件
+    RC_DSH_TOK=""
+    if [ -f "$RC_HOME/logs/dsh-web.log" ]; then
+      RC_DSH_TOK="$(grep -oE '[?&]token=[A-Za-z0-9_-]+' "$RC_HOME/logs/dsh-web.log" 2>/dev/null | tail -1 | cut -d= -f2)"
+    fi
+    if [ -n "$RC_DSH_TOK" ]; then
+      printf '%s\n' "$RC_DSH_TOK" > "$RC_HOME/run/dsh-token.tmp" && \
+        mv "$RC_HOME/run/dsh-token.tmp" "$RC_HOME/run/dsh-token"
+    fi
   fi
 done

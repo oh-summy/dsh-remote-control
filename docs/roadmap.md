@@ -9,7 +9,7 @@
 | **M0** Project init | ✅ Done | Product design, repo setup |
 | **M1** Mac remote access | ✅ Done | Tunnel + password gate + Feishu notifications + watchdog + stop verification |
 | **M2** Mac stability | ✅ Done | Staged start, gate verification, watchdog, launchd autostart, Named Tunnel, rotate-password.sh, log rotation |
-| **M3** Linux/VPS | ⏳ Planned | systemd units, VPS acceptance |
+| **M3** Linux/VPS | 🚧 In progress | One-click install + VPS acceptance verified on Ubuntu 24.04 (2026-09-16); systemd units remaining |
 | **M4** DSH plugin | ⏳ Planned | Plugin package, Notifier interface |
 
 ## M1 acceptance criteria (all passed)
@@ -31,4 +31,4 @@
 
 ## Current focus
 
-M2 completed. Next: M3 Linux/VPS support (systemd units, VPS acceptance).
+M2 completed. M3 in progress: one-click GitHub-Release install and VPS acceptance verified on Ubuntu 24.04; remaining: systemd units (boot autostart on Linux).

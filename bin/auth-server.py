@@ -46,7 +46,8 @@ _DSH_LAUNCH_TOKEN = ""
 
 def _load_dsh_credentials():
     """从 ~/.dsh/.credentials.yaml 读取 browser-session 密钥和当前 launch token。
-    DSH 每次启动生成新 token，所以每次启动 auth-server 时刷新一次即可。"""
+    secret 由 DSH 持久化复用（不随重启轮换）；launch token 每次启动轮换，
+    所以除启动时外，每次登录成功也会调用本函数刷新。"""
     global _DSH_SECRET_B64, _DSH_LAUNCH_TOKEN
     cred_path = os.path.join(DSH_HOME, ".credentials.yaml")
     try:
@@ -58,18 +59,37 @@ def _load_dsh_credentials():
             _DSH_SECRET_B64 = payload["secret"]
     except Exception:
         pass
-    # launch token 是 DSH 进程打印在 stdout 里的；日志文件每次 start 时清空，
-    # 所以 tail 能拿到最新那次启动的 token
+    # launch token 是 DSH 进程打印在 stdout 里的。
+    # 优先读 up.sh/watchdog 维护的状态文件（不受日志轮转影响）；
+    # 回退扫描 DSH 输出日志（up.sh 现写 dsh-web.log，历史名 dsh.log），
+    # 只读文件尾部 256KB，避免大日志全量进内存
+    state_path = os.path.join(RC_HOME, "run", "dsh-token")
     try:
-        log_path = os.path.join(RC_HOME, "logs", "dsh.log")
-        with open(log_path) as f:
-            for line in reversed(list(f)):
-                m = re.search(r'token=([A-Za-z0-9_-]+)', line)
+        with open(state_path) as f:
+            _DSH_LAUNCH_TOKEN = f.read().strip()
+    except Exception:
+        pass
+    if _DSH_LAUNCH_TOKEN:
+        return
+    for name in ("dsh-web.log", "dsh.log"):
+        log_path = os.path.join(RC_HOME, "logs", name)
+        if not os.path.exists(log_path):
+            continue
+        try:
+            with open(log_path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - 262144))
+                tail = f.read().decode("utf-8", "replace")
+            for line in reversed(tail.splitlines()):
+                m = re.search(r'[?&]token=([A-Za-z0-9_-]+)', line)
                 if m:
                     _DSH_LAUNCH_TOKEN = m.group(1)
                     break
-    except Exception:
-        pass
+        except Exception:
+            pass
+        if _DSH_LAUNCH_TOKEN:
+            break
 
 
 def _encode_b64url(data):
@@ -231,6 +251,9 @@ class Handler(BaseHTTPRequestHandler):
             rc_cookie = (f"rc_session={TOKEN}; Max-Age={SESSION_TTL}; Path=/; "
                          "HttpOnly; SameSite=Lax")
             dsh_authority = os.environ.get("RC_UPSTREAM", "127.0.0.1:3080")
+            # DSH 重启会轮换 launch token（secret 持久复用，但重读可兜底），
+            # 登录是低频操作，这里实时重读一次凭据，避免常驻期间凭据过期
+            _load_dsh_credentials()
             if _DSH_SECRET_B64 and _DSH_LAUNCH_TOKEN:
                 now_ms = int(time.time() * 1000)
                 expires_ms = now_ms + DSH_COOKIE_MAX_AGE_DAYS * 86400 * 1000
@@ -263,6 +286,9 @@ if __name__ == "__main__":
     _load_dsh_credentials()
     print(f"[auth] secret loaded: {'yes' if _DSH_SECRET_B64 else 'no'} "
           f"token={'set' if _DSH_LAUNCH_TOKEN else 'not found'}", flush=True)
+    if not _DSH_LAUNCH_TOKEN:
+        print("[auth] ⚠ 未找到 DSH launch token：登录将只发 rc_session，"
+              "DSH ≥0.1.5 会要求再过一次它自己的 token 认证", flush=True)
     srv = Server(("127.0.0.1", PORT), Handler)
     print(f"[auth] listening 127.0.0.1:{PORT} (login-only)", flush=True)
     srv.serve_forever()

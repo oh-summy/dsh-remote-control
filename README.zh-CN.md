@@ -45,7 +45,7 @@ scripts/install.sh     # 下载官方 cloudflared/caddy 二进制，生成密码
 curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash
 
 # 或指定版本
-curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.1
+curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.4
 ```
 
 该脚本会从 GitHub Releases 下载官方源码包，校验 SHA256 后运行 `install.sh`
@@ -56,6 +56,11 @@ curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/sc
 默认情况下，`dsh-web start` 会自动检测 DSH web 是否已运行，若未运行则自动拉起。
 如需禁用此行为，在 `~/.remote-control/rc.env` 中设置 `RC_AUTOSTART_DSH=false`。
 （若自动启动失败，查看 `dsh-web logs dshweb` 或手动执行 `dsh web`。）
+
+DSH web（≥0.1.5）在密码门之外还有自己的签名 cookie 认证。登录成功时
+remote-control 会自动签发该 cookie，无需额外步骤。若看到
+`dsh web authentication required`，说明那一刻凭据不可读（如 DSH 刚重启），
+重新登录一次即可。
 
 然后编辑 `~/.remote-control/rc.env`：
 
