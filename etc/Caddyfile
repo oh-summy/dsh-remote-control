@@ -1,5 +1,7 @@
 {
-	admin 127.0.0.1:2019
+	# 关闭 admin API：脚本通过 PID 文件管理进程，不用 admin 端点；
+	# 固定 2019 会与宿主机已有 Caddy 实例（如 systemd caddy）冲突
+	admin off
 	auto_https off
 	log {
 		output file {env.RC_LOG_DIR}/caddy.log
