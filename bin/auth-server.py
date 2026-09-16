@@ -59,17 +59,23 @@ def _load_dsh_credentials():
     except Exception:
         pass
     # launch token 是 DSH 进程打印在 stdout 里的；日志文件每次 start 时清空，
-    # 所以 tail 能拿到最新那次启动的 token
-    try:
-        log_path = os.path.join(RC_HOME, "logs", "dsh.log")
-        with open(log_path) as f:
-            for line in reversed(list(f)):
-                m = re.search(r'token=([A-Za-z0-9_-]+)', line)
-                if m:
-                    _DSH_LAUNCH_TOKEN = m.group(1)
-                    break
-    except Exception:
-        pass
+    # 所以 tail 能拿到最新那次启动的 token。
+    # up.sh 现在重定向到 logs/dsh-web.log（历史上叫 dsh.log），两个名字都兼容
+    for name in ("dsh-web.log", "dsh.log"):
+        log_path = os.path.join(RC_HOME, "logs", name)
+        if not os.path.exists(log_path):
+            continue
+        try:
+            with open(log_path) as f:
+                for line in reversed(list(f)):
+                    m = re.search(r'token=([A-Za-z0-9_-]+)', line)
+                    if m:
+                        _DSH_LAUNCH_TOKEN = m.group(1)
+                        break
+        except Exception:
+            pass
+        if _DSH_LAUNCH_TOKEN:
+            break
 
 
 def _encode_b64url(data):
@@ -231,6 +237,9 @@ class Handler(BaseHTTPRequestHandler):
             rc_cookie = (f"rc_session={TOKEN}; Max-Age={SESSION_TTL}; Path=/; "
                          "HttpOnly; SameSite=Lax")
             dsh_authority = os.environ.get("RC_UPSTREAM", "127.0.0.1:3080")
+            # DSH 重启会轮换 launch token（可能还有 secret），登录是低频操作，
+            # 这里实时重读一次凭据，避免 auth-server 常驻期间凭据过期
+            _load_dsh_credentials()
             if _DSH_SECRET_B64 and _DSH_LAUNCH_TOKEN:
                 now_ms = int(time.time() * 1000)
                 expires_ms = now_ms + DSH_COOKIE_MAX_AGE_DAYS * 86400 * 1000
