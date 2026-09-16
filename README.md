@@ -47,7 +47,7 @@ Prefer a GitHub Release (no git):
 curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash
 
 # or a specific version
-curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.1
+curl -fsSL https://raw.githubusercontent.com/oh-summy/dsh-remote-control/main/scripts/install-remote.sh | bash -s -- v0.2.4
 ```
 
 The script downloads the official source tarball from GitHub Releases, verifies its SHA256
@@ -58,6 +58,11 @@ for your OS/arch). All releases: <https://github.com/oh-summy/dsh-remote-control
 By default, `dsh-web start` auto-detects if DSH web is not running and starts it
 automatically. To disable this behavior, set `RC_AUTOSTART_DSH=false` in `~/.remote-control/rc.env`.
 (If auto-start fails, check `dsh-web logs dshweb` or start DSH web manually with `dsh web`.)
+
+DSH web (≥0.1.5) has its own signed-cookie authentication on top of the password
+gate. After you log in, remote-control automatically mints that cookie too — no
+extra step. If you ever see `dsh web authentication required`, the DSH credentials
+were unreadable at that moment (e.g. DSH just restarted): log in again once.
 
 Then edit `~/.remote-control/rc.env`:
 
