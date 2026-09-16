@@ -27,15 +27,15 @@ case "$EVENT" in
   *)                COLOR=grey;  TITLE="$EVENT" ;;
 esac
 
-# 卡片 JSON（URL 纯文本、前后空行，无代码块）
+# 卡片 JSON（URL 与标题同一 div，中间仅一行空行；不再前后叠空行）
 CARD="$(python3 - "$TITLE" "$COLOR" "$URL" "$RHOST" "$NOW" "$EVENT" << 'PYEOF'
 import json, sys
 title, color, url, host, now, event = sys.argv[1:7]
 
 elements = []
 if url:
-    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**访问地址**"}})
-    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "\n\n" + url + "\n\n"}})
+    # 单 div：div 间距 + URL 自带的 \n\n 之前会叠出多行空行
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**访问地址**\n\n" + url}})
     elements.append({"tag": "action", "actions": [
         {"tag": "button", "text": {"tag": "plain_text", "content": "打开 DSH"},
          "type": "primary", "url": url}]})
