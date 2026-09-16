@@ -30,14 +30,14 @@ mkdir -p "$RC_HOME/logs" "$RC_HOME/run"
 # Auto-start DSH web if enabled and upstream is unreachable
 : "${RC_AUTOSTART_DSH:=true}"
 if [ "$RC_AUTOSTART_DSH" = "true" ]; then
-  CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || echo 000)"
+  CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || true)"
   if [ "$CODE" = "000" ]; then
     echo "[dsh-web] DSH web 未启动，正在自动拉起 ..."
     nohup dsh web >>"$RC_HOME/logs/dsh-web.log" 2>&1 &
     i=0
     while [ $i -lt 30 ]; do
       sleep 1
-      CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || echo 000)"
+      CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || true)"
       [ "$CODE" != "000" ] && break
       i=$((i + 1))
       [ $((i % 10)) -eq 0 ] && echo "[dsh-web]   ...等待 DSH web 启动（剩余 $((30 - i))s）"

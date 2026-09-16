@@ -70,7 +70,7 @@ while true; do
   fi
 
   # 3) 上游不可达 / 恢复（各只推一次，避免刷屏）
-  CODE="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || echo 000)"
+  CODE="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || true)"
   if [ "$CODE" = "000" ] && [ "$LAST_DOWN" = "0" ]; then
     "$REPO_DIR/bin/notify-feishu.sh" "remote.down（上游 $RC_UPSTREAM 不可达）"
     LAST_DOWN=1

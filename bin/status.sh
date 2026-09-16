@@ -21,17 +21,17 @@ done
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 
 # 认证墙：未带 Cookie 应 302 到登录页
-CODE_GATE="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$RC_LISTEN/" 2>/dev/null || echo 000)"
+CODE_GATE="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$RC_LISTEN/" 2>/dev/null || true)"
 echo "  local-gate  http://$RC_LISTEN -> HTTP $CODE_GATE (302 = wall on)"
 if [ "$CODE_GATE" = "302" ] && [ -f "$RC_HOME/password" ]; then
   PW="$(cat "$RC_HOME/password")"
   JAR="$(mktemp)"
   curl -s -m 5 -c "$JAR" -o /dev/null --data-urlencode "pw=$PW" --data "next=/" "http://$RC_LISTEN/rc-login"
-  CODE_OK="$(curl -s -b "$JAR" -o /dev/null -m 5 -w '%{http_code}' "http://$RC_LISTEN/" 2>/dev/null || echo 000)"
+  CODE_OK="$(curl -s -b "$JAR" -o /dev/null -m 5 -w '%{http_code}' "http://$RC_LISTEN/" 2>/dev/null || true)"
   rm -f "$JAR"
   echo "  login+gate  -> HTTP $CODE_OK (2xx/3xx = upstream ok)"
 fi
-CODE_UP="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || echo 000)"
+CODE_UP="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://$RC_UPSTREAM/" 2>/dev/null || true)"
 echo "  upstream    http://$RC_UPSTREAM -> HTTP $CODE_UP"
 
 URL="$(cat "$RC_HOME/run/url" 2>/dev/null || echo '')"
