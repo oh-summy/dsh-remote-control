@@ -50,8 +50,19 @@ curl -fSL --retry 3 -m 60  -o "$TMP_DIR/$PKG_NAME.tar.gz.sha256" "$BASE/$PKG_NAM
 echo "[dsh-web] 校验 SHA256 ..."
 ( cd "$TMP_DIR" && shasum -a 256 -c "$PKG_NAME.tar.gz.sha256" >/dev/null )
 
-# 解压并调用官方安装器
+# 解压到持久安装目录再调用安装器。
+# 关键：install.sh 会把 dsh-web 软链到「包内 bin/」，若直接从 TMP_DIR 运行，
+# EXIT trap 清理临时目录后 dsh-web 即失效——必须落到一个长期存在的位置。
 # 注意：不要用 exec——需要让 EXIT trap 清理 TMP_DIR（exec 会替换进程，trap 失效）
 echo "[dsh-web] 解压并安装 ..."
-tar -xzf "$TMP_DIR/$PKG_NAME.tar.gz" -C "$TMP_DIR"
-"$TMP_DIR/$PKG_NAME/scripts/install.sh"
+APP_DIR="$HOME/.remote-control/app"          # 持久安装位置（~/.remote-control 本身权限 700）
+STAGE_DIR="$HOME/.remote-control/.app.tmp"   # 同级临时目录，mv 原子替换
+mkdir -p "$HOME/.remote-control"
+chmod 700 "$HOME/.remote-control"
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR"
+tar -xzf "$TMP_DIR/$PKG_NAME.tar.gz" -C "$STAGE_DIR"
+rm -rf "$APP_DIR"
+mv "$STAGE_DIR/$PKG_NAME" "$APP_DIR"
+rmdir "$STAGE_DIR"
+"$APP_DIR/scripts/install.sh"
