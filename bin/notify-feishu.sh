@@ -28,11 +28,14 @@ case "$EVENT" in
 esac
 
 # 卡片 JSON（URL 纯文本、前后空行，无代码块）
-CARD="$(python3 - "$TITLE" "$COLOR" "$URL" "$RHOST" "$NOW" "$EVENT" << 'PYEOF'
+CARD="$(python3 - "$TITLE" "$COLOR" "$URL" "$RHOST" "$NOW" "$EVENT" "${RC_NOTIFY_NOTE:-}" << 'PYEOF'
 import json, sys
-title, color, url, host, now, event = sys.argv[1:7]
+title, color, url, host, now, event, note = sys.argv[1:8]
 
 elements = []
+# 用户自定义说明（rc.env 的 RC_NOTIFY_NOTE），显示在卡片最上方、访问地址之前
+if note:
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": note}})
 if url:
     elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**访问地址**"}})
     elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "\n\n" + url + "\n\n"}})
