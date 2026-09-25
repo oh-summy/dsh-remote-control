@@ -24,8 +24,11 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$RC_HOME/rc.env" ] && . "$RC_HOME/rc.env"
 : "${RC_UPSTREAM:=127.0.0.1:3080}"
 : "${RC_LISTEN:=127.0.0.1:4080}"
-# 原地重拉 caddy 需要 RC_HOME/bin（launchd 环境 PATH 也没有它）
+# 原地重拉 caddy 需要 RC_HOME/bin（launchd 环境 PATH 也没有它）；
+# lark-cli 需要 npm-global bin，否则 launchd 下的 changed/down/recovered 通知
+# 会静默落入 skip(no-channel)（notify-feishu.sh 只在 up.sh 环境里成功过）
 export PATH="$RC_HOME/bin:$PATH"
+rc_add_npm_global_path
 
 # 日志轮转：超过 1MB 时轮转，保留最近 5 个（copytruncate 保持 fd）
 rotate_logs() {
