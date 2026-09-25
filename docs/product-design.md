@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| 版本 | v0.3（active reference · M1 完成，2026-08-30） |
+| 版本 | v0.3（设计期基线 · M1 完成，2026-08-30。运行态实现以 [architecture.md](architecture.md) 为准，此后的演进不回写本文） |
 | 仓库 | `/Users/rocky/project/remote-control`（main 分支） |
 | Git 身份 | `summy wu <summy.wu81@gmail.com>`（沿用 signal-hunter，GitHub 账号 `oh-summy`） |
 | 平台策略 | **macOS 优先**（开发+验收）· **Linux/VPS/云服务器一等支持**（M3 落地）· **Windows 不官方支持，开放 PR** |

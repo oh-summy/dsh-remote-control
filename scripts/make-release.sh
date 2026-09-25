@@ -47,7 +47,7 @@ PKG="$OUT_DIR/$NAME.tar.gz"
 tar -tzf "$PKG" | grep -Fxq "$NAME/etc/Caddyfile" || { echo "✗ 包内缺少 etc/Caddyfile"; exit 1; }
 tar -tzf "$PKG" | grep -Fxq "$NAME/etc/rc.env" && { echo "✗ 包内不应包含 etc/rc.env"; exit 1; }
 tar -tzf "$PKG" | grep -Fxq "$NAME/scripts/install.sh" || { echo "✗ 包内缺少 scripts/install.sh"; exit 1; }
-for f in bin/up.sh bin/down.sh bin/dsh-web bin/auth-server.py; do
+for f in bin/up.sh bin/down.sh bin/dsh-web bin/auth-server.py bin/watchdog.sh bin/selfheal.sh bin/common.sh; do
   tar -tzf "$PKG" | grep -Fxq "$NAME/$f" || { echo "✗ 包内缺少 $f"; exit 1; }
 done
 echo "[make-release] 包内容校验通过"

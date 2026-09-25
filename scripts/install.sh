@@ -58,6 +58,12 @@ elif [ "$os" = linux ]; then
   if [ -n "${RC_CADDY_VERSION:-}" ]; then
     TAG="$RC_CADDY_VERSION"
   else
+    # python3 在脚本后段才做统一检查，这里先用就必须先验，否则裸解释器报错不可操作
+    command -v python3 >/dev/null 2>&1 || {
+      echo "[dsh-web] ✗ Linux 解析 caddy 最新版本需要 python3"
+      echo "[dsh-web]   请先安装 python3，或在 rc.env 设置 RC_CADDY_VERSION=具体版本（如 v2.10.0）跳过解析"
+      exit 1
+    }
     echo "[dsh-web] 解析 caddy 最新版本 ..."
     TAG="$(curl -fsSL -m 30 https://api.github.com/repos/caddyserver/caddy/releases/latest \
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"

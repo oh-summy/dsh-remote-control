@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dsh-web — remote control 一站式命令
-# 用法: dsh-web start|stop|restart|status|logs|password|url|install|tunnel-setup|rotate-password
+# 用法: dsh-web start|stop|restart|status|logs|password|url|install|tunnel-setup|rotate-password|autostart
 #   start           启动全链路，终端打印 URL + 密码后返回（通知照常推飞书）
 #   stop            停止全链路
 #   restart         停止并重新启动（URL 会变，飞书会推新卡片）
 #   status          查看各组件状态
-#   logs            dsh-web logs [caddy|cloudflared|auth|watchdog|notify]  尾部日志
+#   logs            dsh-web logs [caddy|cloudflared|auth|watchdog|selfheal|notify]  尾部日志
 #   password        打印访问密码
 #   url             打印当前入口 URL
 #   install         安装/修复（依赖、配置、凭据、命令行链接）
@@ -22,6 +22,21 @@ while [ -L "$SOURCE" ]; do
   case "$SOURCE" in /*) ;; *) SOURCE="$DIR/$SOURCE" ;; esac
 done
 REPO_DIR="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+
+# 确定性终止常驻看门狗：TERM 落在它的 sleep 30 内时 trap 延迟生效（进程可能
+# 幸存并继续值守/自愈），1s 宽限后 SIGKILL 保证退出；残留 pid 文件按内容
+# 校验后清理（防误删 launchd 重拉的新实例刚认领的 pid）
+stop_resident_watchdog() {
+  local wpid
+  wpid="$(cat "$HOME/.remote-control/run/watchdog.pid" 2>/dev/null || true)"
+  [ -n "$wpid" ] || return 0
+  kill "$wpid" 2>/dev/null || true
+  sleep 1
+  kill -9 "$wpid" 2>/dev/null || true
+  [ "$(cat "$HOME/.remote-control/run/watchdog.pid" 2>/dev/null || true)" = "$wpid" ] && \
+    rm -f "$HOME/.remote-control/run/watchdog.pid"
+  return 0
+}
 
 cmd="${1:-help}"
 case "$cmd" in
@@ -58,15 +73,25 @@ case "$cmd" in
         cloudflared) f="$HOME/.remote-control/logs/cloudflared.log" ;;
         auth)        f="$HOME/.remote-control/logs/auth.log" ;;
         watchdog)    f="$HOME/.remote-control/logs/watchdog.log" ;;
+        selfheal)    f="$HOME/.remote-control/logs/selfheal.log" ;;
         notify)      f="$HOME/.remote-control/logs/notify.log" ;;
-        *) echo "未知日志: ${name}（可选 caddy|cloudflared|auth|watchdog|notify|all）"; exit 1 ;;
+        *) echo "未知日志: ${name}（可选 caddy|cloudflared|auth|watchdog|selfheal|notify|all）"; exit 1 ;;
       esac
       tail -n "${3:-40}" "$f"
     fi
     ;;
   password) cat "$HOME/.remote-control/password" ;;
   url)      cat "$HOME/.remote-control/run/url" 2>/dev/null || echo "(未启动)" ;;
-  install)  exec "$REPO_DIR/scripts/install.sh" ;;
+  install)
+    "$REPO_DIR/scripts/install.sh" || exit 1
+    # 迁移：旧版（≤v0.2.x）autostart 装的是「up.sh + KeepAlive=false」的 plist，
+    # 升级后不会自动变化。检测到已装自启则重渲染并 reload，切换到常驻守护模式
+    if [ "$(uname -s)" = "Darwin" ] \
+       && [ -f "$HOME/Library/LaunchAgents/com.dsh-remote-control.plist" ]; then
+      echo "[dsh-web] 检测到已安装的开机自启，升级为常驻守护模式 ..."
+      "$SOURCE" autostart
+    fi
+    ;;
   tunnel-setup)
     echo "[dsh-web] Named Tunnel 设置向导"
     echo ""
@@ -95,21 +120,36 @@ case "$cmd" in
     PLIST="$HOME/Library/LaunchAgents/com.dsh-remote-control.plist"
     mkdir -p "$HOME/Library/LaunchAgents"
     if [ "${2:-}" = "off" ]; then
+      # 与 on 同序：先落 stopped → unload（job 移除后 launchd 不可能再重拉，
+      # 不留"旧实例死亡到 unload 之间被重拉幸存"的窗口）→ 确定性终止 holder
+      # → 清标志。无标志 TERM 免疫的看门狗由 SIGKILL 兜底
+      mkdir -p "$HOME/.remote-control/run"
+      touch "$HOME/.remote-control/run/stopped"
       launchctl unload "$PLIST" 2>/dev/null || true
-      rm -f "$PLIST"
-      echo "[dsh-web] ✓ 已卸载开机自启"
+      stop_resident_watchdog
+      rm -f "$PLIST" "$HOME/.remote-control/run/stopped"
+      echo "[dsh-web] ✓ 已卸载开机自启（常驻看门狗已一并停止）"
     else
+      # 与 off 同序：先落 stopped 再确定性终止旧看门狗（无标志时它对 TERM
+      # 免疫，直接 unload 会把 active 实例孤儿化到 launchd 之外），
+      # load 新任务后再清标志
+      mkdir -p "$HOME/.remote-control/run"
+      touch "$HOME/.remote-control/run/stopped"
+      launchctl unload "$PLIST" 2>/dev/null || true
+      stop_resident_watchdog
       # 使用 | 作为 sed 分隔符避免 # 冲突
       sed -e "s|__REPO_DIR__|$REPO_DIR|g" -e "s|__RC_HOME__|$HOME/.remote-control|g" \
         "$REPO_DIR/etc/com.dsh-remote-control.plist" > "$PLIST" || {
         echo "[dsh-web] ✗ 生成 plist 失败"
+        rm -f "$HOME/.remote-control/run/stopped"
         exit 1
       }
-      launchctl unload "$PLIST" 2>/dev/null || true
       if launchctl load "$PLIST" 2>/dev/null; then
-        echo "[dsh-web] ✓ 已安装开机自启（launchd）"
+        rm -f "$HOME/.remote-control/run/stopped"
+        echo "[dsh-web] ✓ 已安装开机自启（launchd，常驻守护模式）"
         echo "[dsh-web]   关闭: dsh-web autostart off"
       else
+        rm -f "$HOME/.remote-control/run/stopped"
         echo "[dsh-web] ✗ launchctl load 失败"
         exit 1
       fi

@@ -82,6 +82,19 @@ dsh-web start
 `start` prints the URL and password, returns to the shell, and pushes a card + password to your
 Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 
+### Self-healing & process guard
+
+- **Resident watchdog**: if `caddy`/`auth` die they are respawned in place (URL unchanged); if
+  `cloudflared` dies the tunnel is rebuilt automatically (Quick Tunnel gets a new URL, a new card
+  is pushed to Feishu). Retries back off 30s→600s; only after all attempts fail does it ask for
+  manual intervention and enter a cooldown (no alert storm) — `dsh-web start` clears it.
+- **Boot autostart + guarded watchdog**: `dsh-web autostart` uses launchd `KeepAlive` to guard the
+  watchdog itself — the whole chain comes up at boot, and a killed watchdog is respawned at once.
+  During a manual `dsh-web stop` the guard idles and never fights your commands.
+- **Upgrading**: machines with autostart installed from ≤ v0.2.x keep the old launchd job after
+  upgrading; run `dsh-web install` (or `dsh-web autostart`) once to switch it to the
+  resident-watchdog mode. `dsh-web autostart off` also stops the watchdog.
+
 ## Commands
 
 | Command | Purpose |
@@ -90,7 +103,7 @@ Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 | `dsh-web stop` | Stop everything |
 | `dsh-web restart` | Restart (URL changes; new card is pushed) |
 | `dsh-web status` | Component status + gate/upstream health |
-| `dsh-web logs [caddy\|cloudflared\|auth\|watchdog\|notify\|all]` | Tail logs |
+| `dsh-web logs [caddy\|cloudflared\|auth\|watchdog\|selfheal\|notify\|all]` | Tail logs |
 | `dsh-web password` | Print the access password |
 | `dsh-web url` | Print the current entry URL |
 | `dsh-web install` | Install / repair (binaries, config, credentials, CLI link) |
@@ -110,6 +123,7 @@ Feishu DM. Open the URL, enter the password once — the cookie lasts 7 days.
 | `RC_NOTIFY_NOTE` | — | Custom text at the top of the notification card (above the URL); re-read on every notify, no restart needed |
 | `RC_TUNNEL_NAME` | — | Named Tunnel name (optional, for fixed domain) |
 | `RC_TUNNEL_HOSTNAME` | — | Named Tunnel hostname (optional, e.g. `dsh.example.com`) |
+| `RC_TUNNEL_PROTOCOL` | `http2` | Tunnel transport protocol. Keep `http2` if a proxy TUN (e.g. Clash Verge) runs on this machine — QUIC/UDP flaps with TUN routing and shows up as intermittent 502/530; switch to `quic` only on clean networks |
 
 Runtime data (password, token, logs) lives in `~/.remote-control/` with `600` permissions and
 never enters git.
