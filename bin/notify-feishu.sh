@@ -79,7 +79,7 @@ if [ -n "${RC_FEISHU_OPEN_ID:-}" ] && command -v lark-cli >/dev/null 2>&1; then
       mask)
         # 先去换行再取后 4 字节：密码文件无论是否带结尾换行都恰好取到末 4 位
         LAST4="$(tr -d '\n' < "$RC_HOME/password" | tail -c 4)"
-        PW="访问密码已更新（后 4 位: $LAST4），完整密码见本机 ~/.remote-control/password" ;;
+        PW="访问密码已更新（后 4 位: ${LAST4}），完整密码见本机 ~/.remote-control/password" ;;
       *)
         PW="" ;;
     esac

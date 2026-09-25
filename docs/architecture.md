@@ -19,12 +19,13 @@ Browser ──HTTPS──▶ Cloudflare edge (Quick Tunnel: https://<random>.try
 
 | Component | File | Role |
 |---|---|---|
-| `up.sh` | `bin/up.sh` | Staged start: credentials → auth+Caddy → tunnel → gate verification |
-| `down.sh` | `bin/down.sh` | Per-component stop, SIGKILL escalation, final verification |
-| `watchdog.sh` | `bin/watchdog.sh` | Detects URL change / tunnel death / upstream unreachability |
+| `up.sh` | `bin/up.sh` | Staged start (credentials → auth+Caddy → tunnel → gate verification) under a startup lock (`run/starting`) |
+| `down.sh` | `bin/down.sh` | Per-component stop (identity-checked pids), SIGKILL escalation, final verification |
+| `watchdog.sh` | `bin/watchdog.sh` | Resident guard: URL change / gate respawn (caddy/auth) / tunnel death → hands over to selfheal / upstream unreachability; active-standby election via atomic pid claim |
+| `selfheal.sh` | `bin/selfheal.sh` | Self-heal executor: reruns `up.sh` with 30s→600s backoff (6 attempts); on total failure enters cooldown (`run/heal-failed`) and pages for manual `dsh-web start` |
 | `auth-server.py` | `bin/auth-server.py` | Login page only (rate-limit + password check + issue cookie) |
 | `notify-feishu.sh` | `bin/notify-feishu.sh` | Feishu card + plain-text password message |
-| `status.sh` | `bin/status.sh` | Component status + gate/upstream health |
+| `status.sh` | `bin/status.sh` | Component status + runtime flags (`starting`/`heal-failed`/`stopped`) + gate/upstream health |
 | `install.sh` | `scripts/install.sh` | Download official binaries, init config, link CLI |
 | `rotate-password.sh` | `scripts/rotate-password.sh` | Rotate access password, restart if running |
 
@@ -43,12 +44,22 @@ Browser ──HTTPS──▶ Cloudflare edge (Quick Tunnel: https://<random>.try
 
 ## Data flow
 
-1. **Start**: `up.sh` checks credentials → starts auth-server + Caddy → starts cloudflared →
-   waits for URL → verifies local gate (302) + auth (200) → starts watchdog → pushes Feishu card
-2. **Runtime**: watchdog monitors cloudflared PID, URL changes, and upstream reachability every 30s;
-   rotates logs when they exceed 1MB (keeps 5 backups)
-3. **Stop**: `down.sh` kills each component by PID → SIGKILL leftovers → verifies port release
-4. **Autostart**: `dsh-web autostart` installs launchd plist on macOS; runs `up.sh` on login
+1. **Start**: `up.sh` takes the `run/starting` lock (watchdog observes only while held) → checks
+   credentials → starts auth-server + Caddy → starts cloudflared → waits for URL → verifies local
+   gate (302) + auth (200) → clears `run/heal-failed` → starts watchdog (skipped if already
+   running) → pushes Feishu card
+2. **Runtime**: watchdog monitors cloudflared PID, gate components, URL changes, and upstream
+   reachability every 30s; respawns dead gate components in place (URL unchanged); hands a dead
+   tunnel to `selfheal.sh`; rotates logs when they exceed 1MB (keeps 5 backups)
+3. **Self-heal**: `selfheal.sh` reruns `up.sh` with backoff (30s→600s, 6 attempts); a manual
+   `dsh-web stop` wins at any point (`run/stopped` checked before and during each attempt); after
+   total failure the watchdog cools down until the next successful `dsh-web start`
+4. **Stop**: `down.sh` kills each component by identity-checked PID (kills selfheal's child
+   `up.sh` first) → SIGKILL leftovers → verifies port release; the resident watchdog exits only
+   when `run/stopped` exists
+5. **Autostart**: `dsh-web autostart` installs a launchd plist on macOS that guards
+   `watchdog.sh` with `KeepAlive` — the chain comes up at boot through the watchdog/selfheal
+   path, and a killed watchdog is respawned by launchd
 
 ## Security model
 

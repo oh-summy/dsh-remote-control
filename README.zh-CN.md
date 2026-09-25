@@ -79,6 +79,18 @@ dsh-web start
 `start` 会在终端打印 URL 和密码后返回命令行，同时推送卡片 + 密码到你的飞书私聊。打开 URL，
 输一次密码即可，Cookie 7 天内免登录。
 
+### 自愈与进程守护
+
+- **看门狗常驻自愈**：`caddy`/`auth` 退出会被原地重拉（URL 不变）；`cloudflared` 退出会自动
+  重建隧道（Quick Tunnel 换新 URL，新卡片自动推到飞书），失败时按 30s→600s 退避重试，
+  全部失败才推送人工介入告警，并进入冷却（不重复轰炸），`dsh-web start` 成功后自动解除。
+- **开机自启 + 守护看门狗**：`dsh-web autostart` 通过 launchd `KeepAlive` 守护看门狗本身——
+  开机自动拉起全链路，看门狗被误杀也会被立即重拉。人工 `dsh-web stop` 期间守护自动待命，
+  不会和你的操作打架。
+- **升级说明**：从 ≤ v0.2.x 升级且已开自启的机器，开机任务仍是旧版配置（不会自动变化），
+  请执行一次 `dsh-web install`（或 `dsh-web autostart`）切换到常驻守护模式；
+  `dsh-web autostart off` 会把常驻看门狗一并停掉。
+
 ## 命令
 
 | 命令 | 用途 |
@@ -87,7 +99,7 @@ dsh-web start
 | `dsh-web stop` | 停止全链路 |
 | `dsh-web restart` | 重启（URL 会变，自动推新卡片） |
 | `dsh-web status` | 组件状态 + 认证墙/上游健康度 |
-| `dsh-web logs [caddy\|cloudflared\|auth\|watchdog\|notify\|all]` | 查看日志 |
+| `dsh-web logs [caddy\|cloudflared\|auth\|watchdog\|selfheal\|notify\|all]` | 查看日志 |
 | `dsh-web password` | 打印访问密码 |
 | `dsh-web url` | 打印当前入口 URL |
 | `dsh-web install` | 安装/修复（二进制、配置、凭据、命令链接） |
@@ -107,6 +119,7 @@ dsh-web start
 | `RC_NOTIFY_NOTE` | — | 通知卡片顶部自定义说明（显示在访问地址之前）；每次通知实时读取，改后无需重启 |
 | `RC_TUNNEL_NAME` | — | Named Tunnel 名称（可选，用于固定域名） |
 | `RC_TUNNEL_HOSTNAME` | — | Named Tunnel 域名（可选，如 `dsh.example.com`） |
+| `RC_TUNNEL_PROTOCOL` | `http2` | 隧道传输协议。本机开着代理 TUN（如 Clash Verge）时保持 `http2`——QUIC/UDP 长连接会随 TUN 路由抖动，公网侧表现为间歇性 502/530；纯净网络可改 `quic` |
 
 运行时数据（密码、令牌、日志）都在 `~/.remote-control/`，权限 600，永不进 git。
 

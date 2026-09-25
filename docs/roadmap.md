@@ -8,7 +8,7 @@
 |---|---|---|
 | **M0** Project init | ✅ Done | Product design, repo setup |
 | **M1** Mac remote access | ✅ Done | Tunnel + password gate + Feishu notifications + watchdog + stop verification |
-| **M2** Mac stability | ✅ Done | Staged start, gate verification, watchdog, launchd autostart, Named Tunnel, rotate-password.sh, log rotation |
+| **M2** Mac stability | ✅ Done | Staged start, gate verification, watchdog, launchd autostart, Named Tunnel, rotate-password.sh, log rotation; resident self-healing (watchdog + selfheal.sh, startup lock, failure cooldown) |
 | **M3** Linux/VPS | 🚧 In progress | One-click install + VPS acceptance verified on Ubuntu 24.04 (2026-09-16); systemd units remaining |
 | **M4** DSH plugin | ⏳ Planned | Plugin package, Notifier interface |
 
@@ -27,6 +27,9 @@
 - [x] Named Tunnel fixed domain — set `RC_TUNNEL_NAME` + `RC_TUNNEL_HOSTNAME` in rc.env
 - [x] `rotate-password.sh` command — `dsh-web rotate-password`
 - [x] Log rotation — automatic in watchdog (1MB threshold, 5 backups)
+- [x] Resident self-healing — watchdog respawns gate components in place, `selfheal.sh` rebuilds
+  the tunnel with 30s→600s backoff, `heal-failed` cooldown after 6 failed attempts, launchd
+  `KeepAlive` guards the watchdog itself
 - [x] install.sh idempotency on clean environment — safe to re-run, `--force` to reinstall binaries
 
 ## Current focus
