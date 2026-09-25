@@ -12,6 +12,8 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # 公共库：is_proc/alive_as/component_pattern（组件→命令行特征单一事实源）
 # shellcheck disable=SC1091  # 仓库内公共库，路径随安装位置变化
 . "$REPO_DIR/bin/common.sh"
+# 自愈失败要经 lark-cli 推人工介入告警，launchd 环境同样缺 npm-global bin
+rc_add_npm_global_path
 # shellcheck disable=SC1091  # 运行时环境文件，路径随安装位置变化
 [ -f "$RC_HOME/rc.env" ] && . "$RC_HOME/rc.env"
 

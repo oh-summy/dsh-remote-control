@@ -33,3 +33,19 @@ component_pattern() { # <组件名>
     *) return 1 ;;
   esac
 }
+
+# launchd 环境的 PATH 不含 npm 全局 bin（dsh 与 lark-cli 都可能装在那里）：
+# up.sh 自动拉起 dsh、watchdog/selfheal 经 lark-cli 发通知都依赖它。
+# lark-cli 的 shebang 是 `env node`，node 常在 /usr/local/bin 或 Homebrew 下，
+# 同样不在 launchd 默认 PATH，一并补齐（全部存在性检查，幂等）。
+# 必须在 fork 通知子进程/拉起组件前调用
+rc_add_npm_global_path() {
+  local d
+  for d in "$HOME/.npm-global/bin" /usr/local/bin /opt/homebrew/bin; do
+    [ -d "$d" ] || continue
+    case ":$PATH:" in
+      *":$d:"*) ;;
+      *) export PATH="$PATH:$d" ;;
+    esac
+  done
+}

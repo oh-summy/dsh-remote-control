@@ -16,13 +16,8 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 优先使用 RC_HOME/bin 下的官方二进制（install.sh 下载），其次系统 PATH
 export PATH="$RC_HOME/bin:$PATH"
-# launchd 环境的 PATH 不含 npm 全局 bin，补上以便自动拉起 dsh
-if [ -d "$HOME/.npm-global/bin" ]; then
-  case ":$PATH:" in
-    *":$HOME/.npm-global/bin:"*) ;;
-    *) export PATH="$PATH:$HOME/.npm-global/bin" ;;
-  esac
-fi
+# launchd 环境补 npm 全局 bin（自动拉起 dsh 依赖它），与 watchdog/selfheal 通知共用
+rc_add_npm_global_path
 
 for cmd in caddy cloudflared python3 curl; do
   # ${cmd} 显式定界：bash 3.2 会把后面紧跟的多字节字符吞进变量名
