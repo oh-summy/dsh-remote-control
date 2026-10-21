@@ -79,3 +79,13 @@ Key principles:
 1. **Zero DSH coupling** — the chain only talks HTTP to `127.0.0.1:3080`; no DSH internal APIs
 2. **Reuse mature components** — Caddy for auth/proxy, cloudflared for tunnel; no custom crypto
 3. **Platform differences isolated** — only `install.sh` and service unit files contain platform logic
+4. **Pin DSH directory picker to `browse`** — DSH's adaptive picker resolves to `native` on
+   macOS/Windows with a loopback bind and non-SSH launch: it opens an OS folder dialog on the
+   *host display*, which a remote operator can never click; the pick request then hangs until
+   Cloudflare's proxy kills it with HTTP 524 ("directory picker failed"). `scripts/pin-dsh-picker.sh`
+   (run by `install.sh` and every `up.sh` start) idempotently disables the `-auto` row and mounts
+   the `-browse` backend + browser surface in the web profile's `cordis.patch.yml` (DSH's
+   documented swap point for remote deployments), so workspace folders are browsed/created inside
+   the browser. This is the one deliberate exception to "zero DSH coupling": it edits DSH's
+   user-level profile config, never DSH-internal APIs. Opt out per deployment with
+   `RC_DIRECTORY_PICKER=auto` in `rc.env`.

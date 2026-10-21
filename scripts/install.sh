@@ -113,6 +113,10 @@ esac
 
 export PATH="$BIN_DIR:$PATH"
 
+# ---- 固定 DSH browse 目录选择器（远程场景：native 弹窗无人点击 → Cloudflare 524；
+# 幂等；RC_DIRECTORY_PICKER=auto 可关。profile 未初始化时不阻塞安装）----
+"$REPO_DIR/scripts/pin-dsh-picker.sh" || echo "[dsh-web] ⚠ 目录选择器固定未生效（不影响其余组件，dsh web 启动后可重跑）"
+
 # 安装验证
 ERR=0
 for cmd in cloudflared caddy python3 curl; do

@@ -86,6 +86,10 @@ fi
 if [ "${RC_SELFHEAL:-0}" != "1" ]; then
   rm -f "$RC_HOME/run/stopped"
 fi
+# 固定 browse 目录选择器（远程场景防 native 弹窗无人点击 → Cloudflare 524；
+# 幂等；RC_DIRECTORY_PICKER=auto 关闭。须在自动拉起 dsh web 之前完成）
+"$REPO_DIR/scripts/pin-dsh-picker.sh" || true
+
 # Auto-start DSH web if enabled and upstream is unreachable
 : "${RC_AUTOSTART_DSH:=true}"
 if [ "$RC_AUTOSTART_DSH" = "true" ]; then
