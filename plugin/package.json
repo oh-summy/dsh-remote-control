@@ -1,0 +1,31 @@
+{
+  "name": "@oh-summy/dsh-remote",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Remote access for DSH via a Cloudflare quick tunnel with a password gate. M1: tunnel lifecycle only (no UI, no gate).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.mjs",
+  "engines": {
+    "node": ">=24",
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "remote",
+    "tunnel",
+    "cloudflare"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts -d lib --format esm"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "devDependencies": {
+    "tsdown": "^0.23.2"
+  }
+}

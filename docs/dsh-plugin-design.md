@@ -59,6 +59,10 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 10. 飞书发消息端点是 `im/v1/messages`（v4 是历史版本）。
 11. 安全事实：TLS 在 CF 边缘终止，回环明文；128 位密码门是公网到本机 full-access agent 的唯一屏障——密码强度不可妥协。
 12. volatile-only 变更原地生效，非 volatile 触发条目重启——所以 `remote.*` 全部声明 volatile；若 M1 证明凭据缝不可用，secret 退回 config-secret 并接受"编辑换址 + changed 通知"。
+13. cloudflared quick tunnel 会自己死（边缘 "Connection terminated" 后退出，本机实测 25s 即发生；quick tunnel 官方声明无可用性保证）——这就是 v0.3.x watchdog 的由来；M2 最小自愈 = 子进程 exit → respawn（进程内，一行 backoff 都不用）。
+14. 清理 API = `ctx.effect(() => { ...; return disposer })`（注册即执行 setup，fiber 销毁时执行 disposer）；`ctx.on("dispose")` 从不触发，官方插件零使用——子进程/定时器的回收必须走 effect（M1 实测验证：effect disposer 杀进程 + 清状态文件均生效）。
+15. HMR 不感知 link: 包内文件变化（bundle patch 翻 enabled 不会自动重载）——开发期用触碰 profile 层 patch 强制重组；运行时开关不受影响（M3 的开关走 settings API 提交，不走文件编辑）。
+16. 凭据缝 cookie 链路已实测打通：读 `~/.dsh/.credentials.yaml` 的 browser-session secret → HMAC-SHA256 签 `dsh-auth-*` cookie → 被 3080 接受（200），裸请求被 fence 挡（401）。M2 登录页照此实现。
 
 ## 里程碑（怎么算完成）
 
