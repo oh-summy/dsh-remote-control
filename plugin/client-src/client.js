@@ -63,11 +63,18 @@ const NM_CSS = `
 .nm-eye { background: none; border: none; padding: 3px; cursor: pointer; display: inline-flex; align-items: center; color: #6b7280; border-radius: 6px; }
 .nm-eye:hover { color: #1f2328; background: #f3f4f6; }
 .nm-eye svg { width: 18px; height: 18px; display: block; }
+.nm-info { position: relative; cursor: help; color: #9ca3af; width: 22px; height: 22px; border: 1px solid #e5e7eb; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.nm-info:hover { color: #2563eb; border-color: #bfdbfe; }
+.nm-info svg { width: 13px; height: 13px; display: block; }
+.nm-info .nm-tip { display: none; position: absolute; top: 130%; right: -8px; width: 250px; background: #1f2328; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.7; padding: 8px 11px; border-radius: 8px; z-index: 30; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.nm-info:hover .nm-tip { display: block; }
 `;
 
 // 密码显隐 = 小眼睛图标（无文字按钮）
 const EYE_ON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+const COPY_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+const INFO_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 
 // ---------- vanilla 渲染辅助 ----------
 
@@ -95,8 +102,10 @@ function renderRemoteDetail(container, initialMsg) {
         <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
         <div class="nm-row nm-row-plain"><span class="nm-label">飞书通知</span>
           <button class="nm-sw off" id="rc-ntfy"><i></i></button>
-          <span class="nm-desc">开启后选择群聊或私聊；链接变化时自动推送新地址和完整密码</span></div>
-        <div id="rc-chrow"></div>
+          <span id="rc-chrow" style="display:inline-flex;gap:6px;align-items:center"></span>
+          <span style="flex:1"></span>
+          <span class="nm-info">${INFO_SVG}<span class="nm-tip">开启后选择群聊或私聊；链接变化时自动推送新地址和完整密码</span></span>
+        </div>
         <div id="rc-chform"></div>
         <div class="nm-row nm-row-plain"><span class="nm-label">会话有效期</span>
           <select class="nm-input" id="rc-days" style="flex:0 0 160px">
@@ -134,7 +143,7 @@ function renderRemoteDetail(container, initialMsg) {
     if (stopBtn) stopBtn.onclick = () => act("/rc-api/toggle", "正在停止…");
     if (startBtn) startBtn.onclick = () => act("/rc-api/toggle", "正在启动…（新链接几秒后出现）");
     q("#rc-urlrow").innerHTML = st.running && st.url
-      ? `<div class="nm-row nm-row-plain"><a class="nm-link" target="_blank" href="${nmEsc(st.url)}">${nmEsc(st.url)}</a><button class="nm-btn" id="rc-copy">复制链接</button></div>`
+      ? `<div class="nm-row nm-row-plain"><a class="nm-link" target="_blank" href="${nmEsc(st.url)}">${nmEsc(st.url)}</a><button class="nm-eye" id="rc-copy" title="复制链接" aria-label="复制链接">${COPY_SVG}</button></div>`
       : "";
     const copyBtn = q("#rc-copy");
     if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText(st.url); setMsg("链接已复制"); };
@@ -144,7 +153,7 @@ function renderRemoteDetail(container, initialMsg) {
       if (!pwrow.innerHTML) {
         pwrow.innerHTML = `<div class="nm-row nm-row-plain"><span class="nm-label">访问密码</span><span class="nm-code" id="rc-pw">••••</span>
           <button class="nm-eye" id="rc-reveal" title="显示密码" aria-label="显示密码">${shown ? EYE_OFF : EYE_ON}</button>
-          <button class="nm-btn" id="rc-copypw">复制密码</button>
+          <button class="nm-eye" id="rc-copypw" title="复制密码" aria-label="复制密码">${COPY_SVG}</button>
           <button class="nm-btn-d" id="rc-reset">重置密码</button></div>`;
         wirePwRow();
       }
@@ -239,7 +248,14 @@ function renderRemoteDetail(container, initialMsg) {
     sec.onchange = () => act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: sec.value.trim() || undefined });
   }
 
-  function setMsg(m) { const el = q("#rc-msg"); if (el) el.textContent = m; }
+  let msgTimer = null;
+  function setMsg(m) {
+    const el = q("#rc-msg");
+    if (el) el.textContent = m;
+    if (msgTimer) clearTimeout(msgTimer);
+    // 消息是反馈不是状态：几秒后自动消失（失败类停留久一点），不常驻页面
+    if (m) msgTimer = setTimeout(() => { const el2 = q("#rc-msg"); if (el2) el2.textContent = ""; }, String(m).includes("失败") ? 8000 : 3500);
+  }
 
   async function act(path, pendingMsg, body) {
     setMsg(pendingMsg || "…");
@@ -249,7 +265,7 @@ function renderRemoteDetail(container, initialMsg) {
     } catch (e) { setMsg("失败：" + (e.message || e)); }
     setTimeout(refresh, 400);
   }
-  function done2(r) { return r && r.detail ? undefined : (r && r.ok ? "完成" : undefined); }
+  function done2(r) { return r && r.detail ? String(r.detail) : (r && r.ok ? "完成" : undefined); }
 
   function setEye(on2) {
     const e = q("#rc-reveal");
@@ -478,6 +494,8 @@ function mountNanoMarket(container, pm0) {
   const poll = setInterval(async () => {
     if (!container.isConnected) { clearInterval(poll); return; }
     if (selected) return; // 详情页有自己的轮询
+    // 列表消息与详情页同样自动消失（进行中的「…」除外）
+    if (msg && !String(msg).includes("…")) { msg = ""; render(); return; }
     try {
       const s = await rcApi("/rc-api/state");
       if (applyRemote(!!s.running)) render();

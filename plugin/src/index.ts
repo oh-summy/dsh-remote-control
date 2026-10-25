@@ -187,10 +187,11 @@ async function getTenantToken(): Promise<string> {
 }
 
 async function sendApp(card: any): Promise<void> {
-  // 群通知（chat_id）优先——页面「拉取群列表」自动选；私聊才用 open_id（飞书不允许应用查用户，无法自动获取）
-  const receiveIdType = cfg.notifyChatId ? "chat_id" : "open_id";
+  // 群通知（chat_id）优先——页面「拉取群列表」自动选；私聊按前缀识别 on_=union_id / ou_=open_id
+  //（union_id 跨同开发商应用通用：从别的应用查到的身份也能直接用，绕开本应用无通讯录权限的限制）
   const receiveId = cfg.notifyChatId || cfg.notifyOpenId;
-  if (!receiveId) throw new Error("接收者未配置：点「拉取群列表」选一个群（推荐），或填私聊 open_id");
+  if (!receiveId) throw new Error("接收者未配置：点「拉取群列表」选群，或填私聊 open_id / union_id");
+  const receiveIdType = cfg.notifyChatId ? "chat_id" : String(receiveId).startsWith("on_") ? "union_id" : "open_id";
   const token = await getTenantToken();
   const sendRes = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
     method: "POST",
@@ -211,11 +212,12 @@ async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promi
   };
   const [title, color] = meta[event] ?? ["远程访问", "grey"];
   const tier = notifyText(); // 换址必带完整密码：能自救（用户拍板，不做档位）
+  // 布局为「方便复制」设计：URL 与密码各占独立一行，前后空行——点按即选中整行，不会带标签
   let bodyMd = event === "down" || event === "recovered"
-    ? (url ? "地址：" + url : "隧道进程已退出，正在自动恢复。")
-    : "**访问地址**\n" + url;
+    ? (url ? "**最新地址**\n\n" + url : "隧道进程已退出，正在自动恢复。")
+    : "**访问地址**\n\n" + url;
   if (event === "started" || event === "changed") {
-    bodyMd += "\n**访问密码**：" + tier;
+    bodyMd += "\n\n**访问密码**\n\n" + tier;
   }
   const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + new Date().toLocaleString("zh-CN"));
   try {
@@ -436,8 +438,10 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           return;
         }
         if (req.method === "POST" && path === "/rc-api/reveal") {
+          // 限频只对远端有意义（已登录的共享设备）；本机页面（3080→9091）是主人自己，豁免——
+          // 否则自动化测试/连续操作会吃掉主人的配额，眼睛和复制全部误报「操作过于频繁」
           const last = revealAt.get(ip) ?? 0;
-          if (Date.now() - last < REVEAL_FREQ_MS) { res.writeHead(429, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "操作过于频繁，60s 一次" })); return; }
+          if (!isLocal && Date.now() - last < REVEAL_FREQ_MS) { res.writeHead(429, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "操作过于频繁，60s 一次" })); return; }
           revealAt.set(ip, Date.now());
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ password }));
@@ -544,10 +548,10 @@ function startLoginServer(ctx: AnyCtx): http.Server {
         }
         if (req.method === "POST" && path === "/rc-api/test") {
           const channel = cfg.notifyChannel || "off";
-          if (channel === "off") { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "通知通道未启用（设置表单里选 webhook 或 app）" })); return; }
+          if (channel === "off") { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "通知未开启" })); return; }
           const r = await sendNotify(ctx, "test", currentUrl || null);
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(r.ok ? { ok: true } : { ok: false, error: r.error }));
+          res.end(JSON.stringify(r && r.ok ? { ok: true, detail: "测试消息已发送，请看飞书" } : { ok: false, error: r && r.error }));
           return;
         }
       }

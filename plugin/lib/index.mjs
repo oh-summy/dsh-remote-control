@@ -190,9 +190,9 @@ async function getTenantToken() {
 	return tokenJson.tenant_access_token;
 }
 async function sendApp(card) {
-	const receiveIdType = cfg.notifyChatId ? "chat_id" : "open_id";
 	const receiveId = cfg.notifyChatId || cfg.notifyOpenId;
-	if (!receiveId) throw new Error("接收者未配置：点「拉取群列表」选一个群（推荐），或填私聊 open_id");
+	if (!receiveId) throw new Error("接收者未配置：点「拉取群列表」选群，或填私聊 open_id / union_id");
+	const receiveIdType = cfg.notifyChatId ? "chat_id" : String(receiveId).startsWith("on_") ? "union_id" : "open_id";
 	const token = await getTenantToken();
 	const sendJson = await (await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
 		method: "POST",
@@ -223,8 +223,8 @@ async function sendNotify(ctx, event, url) {
 		test: ["测试通知", "grey"]
 	}[event] ?? ["远程访问", "grey"];
 	const tier = notifyText();
-	let bodyMd = event === "down" || event === "recovered" ? url ? "地址：" + url : "隧道进程已退出，正在自动恢复。" : "**访问地址**\n" + url;
-	if (event === "started" || event === "changed") bodyMd += "\n**访问密码**：" + tier;
+	let bodyMd = event === "down" || event === "recovered" ? url ? "**最新地址**\n\n" + url : "隧道进程已退出，正在自动恢复。" : "**访问地址**\n\n" + url;
+	if (event === "started" || event === "changed") bodyMd += "\n\n**访问密码**\n\n" + tier;
 	const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
 	try {
 		if (channel === "group") {
@@ -465,7 +465,7 @@ function startLoginServer(ctx) {
 				}
 				if (req.method === "POST" && path === "/rc-api/reveal") {
 					const last = revealAt.get(ip) ?? 0;
-					if (Date.now() - last < REVEAL_FREQ_MS) {
+					if (!isLocal && Date.now() - last < REVEAL_FREQ_MS) {
 						res.writeHead(429, { "Content-Type": "application/json" });
 						res.end(JSON.stringify({ error: "操作过于频繁，60s 一次" }));
 						return;
@@ -593,14 +593,17 @@ function startLoginServer(ctx) {
 				if (req.method === "POST" && path === "/rc-api/test") {
 					if ((cfg.notifyChannel || "off") === "off") {
 						res.writeHead(400, { "Content-Type": "application/json" });
-						res.end(JSON.stringify({ error: "通知通道未启用（设置表单里选 webhook 或 app）" }));
+						res.end(JSON.stringify({ error: "通知未开启" }));
 						return;
 					}
 					const r = await sendNotify(ctx, "test", currentUrl || null);
 					res.writeHead(200, { "Content-Type": "application/json" });
-					res.end(JSON.stringify(r.ok ? { ok: true } : {
+					res.end(JSON.stringify(r && r.ok ? {
+						ok: true,
+						detail: "测试消息已发送，请看飞书"
+					} : {
 						ok: false,
-						error: r.error
+						error: r && r.error
 					}));
 					return;
 				}
