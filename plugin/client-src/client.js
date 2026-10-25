@@ -172,7 +172,13 @@ function mountNanoMarket(container, pm) {
     await load();
   }
 
-  function title(b) { return (b.meta && b.meta.title && (b.meta.title.zh || b.meta.title.en)) || b.name; }
+  function text(v) {
+    if (v == null) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "object") return String(v.zh || v.en || "");
+    return String(v);
+  }
+  function title(b) { return text(b.meta && b.meta.title) || b.name; }
 
   function render() {
     if (cleanupRemote) { cleanupRemote(); cleanupRemote = null; }
@@ -181,41 +187,42 @@ function mountNanoMarket(container, pm) {
   }
 
   function renderList() {
-    const installedRows = (bundles || []).map((b) => `
+    // 官方包（@deepseek-ai/*）是 DSH 宿主自己的组成件，不属于市场；本机插件 = 其余 bundles
+    const mine = (bundles || []).filter((b) => !String(b.name).startsWith("@deepseek-ai/"));
+    const mineRows = mine.map((b) => `
       <div class="nm-row" data-open="${nmEsc(b.name)}">
         <div class="nm-icon">🧩</div>
         <div style="flex:1">
-          <div><span class="nm-name">${nmEsc(title(b))}</span>${b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}${b.error ? `<span class="nm-badge-g">加载错误</span>` : ""}</div>
-          <div class="nm-desc">${nmEsc((b.meta && b.meta.description) || b.description || b.name)}</div>
+          <div><span class="nm-name">${nmEsc(title(b))}</span>${b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}${b.source && String(b.source).indexOf("link:") === 0 ? `<span class="nm-badge">开发中</span>` : ""}${b.error ? `<span class="nm-badge-g">加载错误</span>` : ""}</div>
+          <div class="nm-desc">${nmEsc(text(b.meta && b.meta.description) || text(b.description) || b.name)}</div>
         </div>
         <button class="nm-sw${b.enabled ? "" : " off"}" data-sw="${nmEsc(b.name)}" aria-label="${b.enabled ? "停用" : "启用"}"><i></i></button>
       </div>`).join("");
     const plist = market.plugins || [];
     const mrows = plist.map((p) => {
       const installed = (bundles || []).some((b) => b.name === p.name);
-      const ptitle = (p.title && (p.title.zh || p.title.en)) || p.name;
+      const ptitle = text(p.title) || p.name;
       const ver = p.versions && p.versions[0] ? p.versions[0].version : "";
       return `<div class="nm-row nm-row-plain">
         <div class="nm-icon">🧩</div>
         <div style="flex:1">
-          <div><span class="nm-name">${nmEsc(ptitle)}</span>${ver ? `<span class="nm-ver">v${nmEsc(ver)}</span>` : ""}${installed ? `<span class="nm-badge">已安装</span>` : `<span class="nm-badge-g">未安装</span>`}</div>
-          <div class="nm-desc">${nmEsc((p.description && (p.description.zh || p.description.en)) || "")}</div>
+          <div><span class="nm-name">${nmEsc(ptitle)}</span>${ver ? `<span class="nm-ver">v${nmEsc(ver)}</span>` : ""}${installed ? `<span class="nm-badge">已安装</span>` : `<span class="nm-badge-g">未上架</span>`}</div>
+          <div class="nm-desc">${nmEsc(text(p.description))}</div>
         </div>
         ${installed ? `<button class="nm-btn" data-open="${nmEsc(p.name)}">管理</button>` : `<span class="nm-badge-g">发布后可安装</span>`}
       </div>`;
     }).join("");
-    const installedCount = (bundles || []).length;
     const marketBody = market.loading ? `<div class="nm-empty">读取市场索引…</div>`
       : market.error ? `<div class="nm-empty">市场索引读取失败：${nmEsc(market.error)}</div>`
-      : plist.length === 0 ? `<div class="nm-empty">市场还没有注册插件。发布流程走完后，第一个插件会在这里出现并可直接安装。</div>`
+      : plist.length === 0 ? `<div class="nm-empty">市场还没有注册插件。发布流程（tag v0.4.0 → 市场上架）走完后，@oh-summy/dsh-remote 会作为第一个插件在这里出现。</div>`
       : mrows;
     shell.innerHTML = `
-      <div class="nm-sec">已安装</div>
-      <div class="nm-card">${installedCount === 0 ? `<div class="nm-empty">（还没有已安装插件）</div>` : installedRows}</div>
       <div class="nm-sec">市场插件</div>
       <div class="nm-card">${marketBody}</div>
+      <div class="nm-sec">本机插件（未上架）</div>
+      <div class="nm-card">${mine.length === 0 ? `<div class="nm-empty">（没有本机插件）</div>` : mineRows}</div>
       <div class="nm-msg">${nmEsc(msg)}</div>
-      <div class="nm-note">Nano Market = oh-summy 的插件市场（dsh-nano-market）。开关 = 插件的启用/停用，关了即不可用；点行进入管理。索引：https://oh-summy.github.io/dsh-nano-market/index.json</div>`;
+      <div class="nm-note">开关 = 插件的启用/停用，关了即不可用；点行进入管理。索引：https://oh-summy.github.io/dsh-nano-market/index.json</div>`;
     for (const el of shell.querySelectorAll("[data-open]")) {
       el.addEventListener("click", () => { selected = el.getAttribute("data-open"); render(); });
     }
