@@ -420,15 +420,15 @@ function mountNanoMarket(container, pm0) {
       return `<div class="nm-row nm-row-plain">
         <div class="nm-icon">🧩</div>
         <div style="flex:1">
-          <div><span class="nm-name">${nmEsc(ptitle)}</span>${ver ? `<span class="nm-ver">v${nmEsc(ver)}</span>` : ""}${installed ? `<span class="nm-badge">已安装</span>` : `<span class="nm-badge-g">未上架</span>`}</div>
+          <div><span class="nm-name">${nmEsc(ptitle)}</span>${ver ? `<span class="nm-ver">v${nmEsc(ver)}</span>` : ""}${installed ? `<span class="nm-badge">已安装</span>` : `<span class="nm-badge-g">未安装</span>`}</div>
           <div class="nm-desc">${nmEsc(text(p.description))}</div>
         </div>
-        ${installed ? `<button class="nm-btn" data-open="${nmEsc(p.name)}">管理</button>` : `<span class="nm-badge-g">发布后可安装</span>`}
+        ${installed ? `<button class="nm-btn" data-open="${nmEsc(p.name)}">管理</button>` : ""}
       </div>`;
     }).join("");
     const marketBody = market.loading ? `<div class="nm-empty">读取市场索引…</div>`
       : market.error ? `<div class="nm-empty">市场索引读取失败：${nmEsc(market.error)}</div>`
-      : plist.length === 0 ? `<div class="nm-empty">市场还没有注册插件。发布流程（tag v0.4.0 → 市场上架）走完后，@oh-summy/dsh-remote 会作为第一个插件在这里出现。</div>`
+      : plist.length === 0 ? `<div class="nm-empty">市场还没有上架插件</div>`
       : mrows;
     const localBody = loadFailed && mine.length === 0
       ? `<div class="nm-empty">插件列表读取失败（页面重载后通道偶发未就绪）<button class="nm-btn" id="nm-retry" style="margin-left:8px">重试</button></div>`
