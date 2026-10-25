@@ -93,9 +93,16 @@ function renderRemoteDetail(container, initialMsg) {
         <div id="rc-urlrow"></div>
         <div id="rc-pwrow"></div>
         <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
-        <div class="nm-sec">通知</div>
-        <div class="nm-row nm-row-plain" id="rc-chrow"></div>
+        <div class="nm-row nm-row-plain"><span class="nm-label">飞书通知</span>
+          <button class="nm-sw off" id="rc-ntfy"><i></i></button>
+          <span class="nm-desc">开启后选择群聊或私聊；链接变化时自动推送新地址和完整密码</span></div>
+        <div id="rc-chrow"></div>
         <div id="rc-chform"></div>
+        <div class="nm-row nm-row-plain"><span class="nm-label">会话有效期</span>
+          <select class="nm-input" id="rc-days" style="flex:0 0 160px">
+            <option value="1">1 天</option><option value="3">3 天</option><option value="7">7 天</option>
+            <option value="14">14 天</option><option value="30">30 天</option>
+          </select><span class="nm-desc">远程登录后的有效时长（不可永久）</span></div>
         <div class="nm-row nm-row-plain"><span class="nm-label">自动重启</span>
           <button class="nm-sw" id="rc-arestart"><i></i></button>
           <span class="nm-desc">隧道进程意外退出时 5 秒内自动重拉</span></div>
@@ -150,22 +157,28 @@ function renderRemoteDetail(container, initialMsg) {
     const ar = q("#rc-arestart");
     ar.className = "nm-sw" + (st.autoRestart ? "" : " off");
     ar.onclick = () => act("/rc-api/config", st.autoRestart ? "正在关闭自动重启…" : "正在开启自动重启…", { autoRestart: !st.autoRestart });
+    const ntfy = q("#rc-ntfy");
+    const chOn = (st.channel || "off") !== "off";
+    ntfy.className = "nm-sw" + (chOn ? "" : " off");
+    if (chOn) lastChannel = st.channel === "dm" ? "dm" : "group";
+    if (st.sessionDays) q("#rc-days").value = String(st.sessionDays);
     const chNow = st.channel || "off";
     if (chNow !== lastChRendered || !q("#rc-chrow .nm-seg")) { lastChRendered = chNow; renderChannel(); } // 值没变不重建：避免轮询打断点击
     q("#rc-events").innerHTML = st.events.length === 0 ? "（暂无）" : st.events.map((e) => `<div class="nm-event">${nmEsc(e.time)} · ${nmEsc(e.type)} · ${nmEsc(e.detail)}</div>`).join("");
   }
 
-  // ---------- 通知设置（按通道呈现不同字段，改动即保存） ----------
+  // ---------- 通知设置（总开关 + 群聊/私聊，改动即保存） ----------
   let lastChRendered = null;
+  let lastChannel = "group"; // 重新打开通知时回到上次的收件方式
   function renderChannel() {
     const row = q("#rc-chrow");
     const ch = st.channel || "off";
-    const seg = [["off", "关闭"], ["webhook", "群机器人"], ["app", "飞书应用"]];
-    row.innerHTML = seg.map(([v, t2]) =>
+    if (ch === "off") { row.innerHTML = ""; q("#rc-chform").innerHTML = ""; return; }
+    row.innerHTML = [["group", "群聊"], ["dm", "私聊"]].map(([v, t2]) =>
       `<button class="nm-seg${ch === v ? " on" : ""}" data-ch="${v}">${t2}</button>`).join("") +
-      `<span style="flex:1"></span><button class="nm-btn" id="rc-test" ${ch === "off" ? "disabled style=\"opacity:.5\"" : ""}>发送测试</button>`;
+      `<span style="flex:1"></span><button class="nm-btn" id="rc-test">发送测试</button>`;
     for (const b of row.querySelectorAll("[data-ch]")) {
-      b.onclick = () => { if (b.dataset.ch !== ch) act("/rc-api/config", "通道已切换", { notifyChannel: b.dataset.ch }); };
+      b.onclick = () => { if (b.dataset.ch !== ch) act("/rc-api/config", b.dataset.ch === "group" ? "已切到群聊" : "已切到私聊", { notifyChannel: b.dataset.ch }); };
     }
     const tb = q("#rc-test");
     if (tb) tb.onclick = () => act("/rc-api/test", "测试中…");
@@ -175,67 +188,55 @@ function renderRemoteDetail(container, initialMsg) {
   function renderChannelForm() {
     const ch = st.channel || "off";
     const form = q("#rc-chform");
-    if (ch === "off") {
-      form.innerHTML = `<div class="nm-empty" style="text-align:left">通知已关闭。选择上面的通道后，这里会出现对应的配置项。</div>`;
-      return;
-    }
-    if (ch === "webhook") {
-      form.innerHTML = `
-        <div class="nm-row nm-row-plain"><span class="nm-label">webhook 地址</span><input class="nm-input" id="rc-hook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></div>
-        <div class="nm-note">群机器人最简单：在飞书群里添加「自定义机器人」，把它给的 webhook 地址粘到这里就行——不需要 App ID，也不需要群 ID（地址本身就绑定了那个群）。改动即保存。</div>`;
-      const inp = form.querySelector("#rc-hook");
-      inp.value = st.webhookUrl || "";
-      inp.onchange = () => act("/rc-api/notify-secret", "webhook 地址已保存", { webhookUrl: inp.value.trim() || undefined });
-      return;
-    }
-    // app 通道：群通知（chat_id 自动拉取）优先，私聊 open_id 可选
-    form.innerHTML = `
+    if (ch === "off") { form.innerHTML = ""; return; }
+    const appRow = `
       <div class="nm-row nm-row-plain"><span class="nm-label">App ID</span><input class="nm-input" id="rc-appid" placeholder="cli_xxxx" value="${nmEsc(st.appId || "")}">
-        <span class="nm-label" style="min-width:70px">App Secret</span><input class="nm-input" id="rc-sec" type="password" placeholder="${st.hasAppSecret ? "已配置（留空不变）" : "app secret"}"></div>
-      <div class="nm-row nm-row-plain"><span class="nm-label">通知到群</span>
-        <select class="nm-input" id="rc-chat"><option value="">${st.chatId ? "已选：" + nmEsc(st.chatName || st.chatId) : "（点右侧按钮拉取）"}</option></select>
-        <button class="nm-btn" id="rc-fetchchats">拉取群列表</button></div>
-      <div class="nm-row nm-row-plain"><span class="nm-label">或私聊 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx（可留空，私聊才需要）" value="${nmEsc(st.openId || "")}"></div>
-      <div class="nm-note">推荐用群通知：拉取群列表选一个群即可（机器人需已被拉进群，应用需要 im:chat + im:message 权限）。私聊才需要 open_id——飞书不允许应用查用户，open_id 无法自动获取，只能在开放平台「消息日志」里看到；不折腾私聊就留空。所有改动即时保存。</div>
-      <div class="nm-row nm-row-plain"><span class="nm-label">换址通知密码</span>
-        <select class="nm-input" id="rc-policy" style="flex:0 0 220px">
-          <option value="full">完整密码（换链接后可自救）</option><option value="mask">仅前 4 位掩码</option><option value="off">不发送</option>
-        </select></div>
-      <div class="nm-row nm-row-plain"><span class="nm-label">会话有效期</span>
-        <select class="nm-input" id="rc-days" style="flex:0 0 160px">
-          <option value="1">1 天</option><option value="3">3 天</option><option value="7">7 天</option>
-          <option value="14">14 天</option><option value="30">30 天</option>
-        </select><span class="nm-desc">远程登录后的有效时长（不可永久）</span></div>`;
+        <span class="nm-label" style="min-width:70px">App Secret</span><input class="nm-input" id="rc-sec" type="password" placeholder="${st.hasAppSecret ? "已配置（留空不变）" : "app secret"}"></div>`;
+    if (ch === "group") {
+      // 群聊：应用拉群列表（chat_id）或群机器人 webhook，任选其一
+      form.innerHTML = `
+        ${appRow}
+        <div class="nm-row nm-row-plain"><span class="nm-label">通知到群</span>
+          <select class="nm-input" id="rc-chat"><option value="">${st.chatId ? "已选：" + nmEsc(st.chatName || st.chatId) : "（点右侧按钮拉取）"}</option></select>
+          <button class="nm-btn" id="rc-fetchchats">拉取群列表</button></div>
+        <div class="nm-row nm-row-plain"><span class="nm-label">或群机器人</span><input class="nm-input" id="rc-hook" placeholder="${st.hasWebhook ? "已配置（重新粘贴即覆盖）" : "粘贴群机器人 webhook 地址（不用 App ID，最简单）"}"></div>
+        <div class="nm-note">两种发法任选其一：上面填 App ID/Secret 后「拉取群列表」选群（机器人需已进群，应用需 im:chat + im:message 权限）；或在飞书群里加「自定义机器人」，把 webhook 地址粘到最下面——不需要 App ID 也不需要群 ID。改动即保存。</div>`;
+      wireAppRow(form);
+      const chatSel = form.querySelector("#rc-chat");
+      const saveChat = (chatId, chatName) => act("/rc-api/config", chatId ? "已通知到群：" + chatName : "已取消群选择", { notifyChatId: chatId, notifyChatName: chatName });
+      chatSel.onchange = () => {
+        const opt = chatSel.options[chatSel.selectedIndex];
+        saveChat(chatSel.value, opt ? opt.textContent : "");
+      };
+      form.querySelector("#rc-fetchchats").onclick = async () => {
+        setMsg("拉取群列表中…");
+        try {
+          const r = await rcApi("/rc-api/chats");
+          if (!r.chats || r.chats.length === 0) { setMsg("机器人还不在任何群里——先在飞书里把它拉进一个群再试"); return; }
+          chatSel.innerHTML = `<option value="">（不通知到群）</option>` + r.chats.map((c) => `<option value="${nmEsc(c.chatId)}">${nmEsc(c.name)}</option>`).join("");
+          if (st.chatId) chatSel.value = st.chatId;
+          setMsg("已拉到 " + r.chats.length + " 个群，选择后即保存");
+        } catch (e) { setMsg("失败：" + (e.message || e)); }
+      };
+      const hook = form.querySelector("#rc-hook");
+      hook.onchange = () => act("/rc-api/notify-secret", "webhook 地址已保存", { webhookUrl: hook.value.trim() || undefined });
+      return;
+    }
+    // 私聊：只能走应用 + open_id
+    form.innerHTML = `
+      ${appRow}
+      <div class="nm-row nm-row-plain"><span class="nm-label">接收者 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx" value="${nmEsc(st.openId || "")}"></div>
+      <div class="nm-note">私聊只能走应用。open_id 无法自动获取（飞书不允许应用查用户）：在开放平台「消息日志」里能看到给你发过消息的 open_id。只是想收到通知的话，建议切回「群聊」。改动即保存。</div>`;
+    wireAppRow(form);
+    const oid = form.querySelector("#rc-oid");
+    oid.onchange = () => act("/rc-api/config", "open_id 已保存", { notifyOpenId: oid.value.trim() });
+  }
+
+  function wireAppRow(form) {
     const appId = form.querySelector("#rc-appid");
     const sec = form.querySelector("#rc-sec");
-    const oid = form.querySelector("#rc-oid");
-    const chatSel = form.querySelector("#rc-chat");
-    const policy = form.querySelector("#rc-policy");
-    policy.value = st.policy || "full";
-    if (st.sessionDays) q("#rc-days").value = String(st.sessionDays);
-    const saveIds = () => act("/rc-api/config", "已保存", {
-      notifyAppId: appId.value.trim(),
-      notifyOpenId: oid.value.trim(),
-    });
-    appId.onchange = saveIds;
-    oid.onchange = saveIds;
+    appId.onchange = () => act("/rc-api/config", "App ID 已保存", { notifyAppId: appId.value.trim() });
     sec.onchange = () => act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: sec.value.trim() || undefined });
-    policy.onchange = () => act("/rc-api/config", "密码档位已更新", { passwordPolicy: policy.value });
-    const saveChat = (chatId, chatName) => act("/rc-api/config", chatId ? "已通知到群：" + chatName : "已取消群通知（回到私聊 open_id）", { notifyChatId: chatId, notifyChatName: chatName });
-    chatSel.onchange = () => {
-      const opt = chatSel.options[chatSel.selectedIndex];
-      saveChat(chatSel.value, opt ? opt.textContent : "");
-    };
-    form.querySelector("#rc-fetchchats").onclick = async () => {
-      setMsg("拉取群列表中…");
-      try {
-        const r = await rcApi("/rc-api/chats");
-        if (!r.chats || r.chats.length === 0) { setMsg("机器人还不在任何群里——先在飞书里把它拉进一个群再试"); return; }
-        chatSel.innerHTML = `<option value="">（不通知到群）</option>` + r.chats.map((c) => `<option value="${nmEsc(c.chatId)}">${nmEsc(c.name)}</option>`).join("");
-        if (st.chatId) chatSel.value = st.chatId;
-        setMsg("已拉到 " + r.chats.length + " 个群，选择后即保存");
-      } catch (e) { setMsg("失败：" + (e.message || e)); }
-    };
   }
 
   function setMsg(m) { const el = q("#rc-msg"); if (el) el.textContent = m; }
@@ -271,6 +272,14 @@ function renderRemoteDetail(container, initialMsg) {
     };
     q("#rc-reset").onclick = () => { if (confirm("重置密码？所有已登录会话将失效，新密码随下次开启通知推送。")) act("/rc-api/reset", "密码已重置"); };
   }
+
+  // 通知总开关 + 会话有效期（一次接线，状态由 refresh 刷新）
+  q("#rc-ntfy").onclick = () => {
+    const cur = st ? (st.channel || "off") : "off";
+    const next = cur === "off" ? lastChannel : "off";
+    act("/rc-api/config", next === "off" ? "通知已关闭" : "通知已开启", { notifyChannel: next });
+  };
+  q("#rc-days").onchange = () => act("/rc-api/config", "会话有效期已更新", { sessionDays: parseInt(q("#rc-days").value, 10) || 7 });
 
   // 环境检查
   rcApi("/rc-api/envcheck").then((e) => {

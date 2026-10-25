@@ -43,12 +43,11 @@ export interface Config {
   cloudflaredPath?: string;
   caddyPath?: string;
   autoRestart?: boolean;
-  notifyChannel?: "off" | "webhook" | "app";
+  notifyChannel?: "off" | "group" | "dm";
   notifyAppId?: string;
   notifyOpenId?: string;
   notifyChatId?: string;
   notifyChatName?: string;
-  passwordPolicy?: "full" | "mask" | "off";
   sessionDays?: number;
 }
 
@@ -63,12 +62,12 @@ export const Config = z.object({
   enabled: z.boolean().default(false).describe("启用远程访问（关闭即回收隧道；开启产生新的临时链接）"),
   cloudflaredPath: z.string().default("").describe("cloudflared 路径（留空自动探测）"),
   caddyPath: z.string().default("").describe("caddy 路径（留空自动探测）"),
-  notifyChannel: z.enum(["off", "webhook", "app"]).default("off").describe("飞书通知通道"),
+  // 兼容旧值（webhook/app 按传输方式）→ 新模型（group/dm 按收件人）：profile 遗留键不至于炸掉条目
+  notifyChannel: z.preprocess((v) => (v === "webhook" || v === "app" ? "group" : v), z.enum(["off", "group", "dm"]).default("off")).describe("飞书通知：群聊或私聊"),
   notifyAppId: z.string().default("").describe("飞书 App ID（app 通道）"),
   notifyOpenId: z.string().default("").describe("私聊通知接收者 open_id（群通知不需要，页面可拉群列表自动选）"),
   notifyChatId: z.string().default("").describe("群通知 chat_id（页面「拉取群列表」自动填）"),
   notifyChatName: z.string().default("").describe("群通知显示名（随 chat_id 保存）"),
-  passwordPolicy: z.enum(["full", "mask", "off"]).default("full").describe("URL 变化通知附带密码的档位（full 才能在换域后自救）"),
   autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）"),
   sessionDays: z.number().int().min(1).max(30).default(7).describe("远程会话有效天数（1-30，不可永久）"),
 });
@@ -144,10 +143,8 @@ const timers = new Set<NodeJS.Timeout>(); // respawn 定时器登记：disposer 
 const failCounts = new Map<string, { count: number; until: number }>();
 const revealAt = new Map<string, number>();
 
-function notifyText(policy: string): string | null {
-  if (policy === "full") return password;
-  if (policy === "mask") return password.slice(0, 4) + "••••••••（完整密码见 DSH 页面密码卡）";
-  return null;
+function notifyText(): string {
+  return password; // 换址通知必带完整密码（自救需要，用户拍板不做档位）
 }
 
 // ---------- notify ----------
@@ -207,24 +204,31 @@ async function sendApp(card: any): Promise<void> {
 
 async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promise<{ ok: boolean; error?: string }> {
   const channel = cfg.notifyChannel || "off";
-  if (channel === "off") return { ok: false, error: "通知通道未开启" };
+  if (channel === "off") return { ok: false, error: "通知未开启" };
   const meta: Record<string, [string, string]> = {
     started: ["远程访问已开启", "green"], changed: ["访问地址已变化", "blue"],
     down: ["远程访问已断开", "red"], recovered: ["远程访问已恢复", "green"], test: ["测试通知", "grey"],
   };
   const [title, color] = meta[event] ?? ["远程访问", "grey"];
-  const tier = notifyText(cfg.passwordPolicy || "full");
+  const tier = notifyText(); // 换址必带完整密码：能自救（用户拍板，不做档位）
   let bodyMd = event === "down" || event === "recovered"
     ? (url ? "地址：" + url : "隧道进程已退出，正在自动恢复。")
     : "**访问地址**\n" + url;
-  if (event === "started" || event === "changed" || event === "test") {
-    if (tier === null) bodyMd += "\n密码：略（passwordPolicy=off）";
-    else if (event !== "test") bodyMd += "\n**访问密码**：" + tier;
+  if (event === "started" || event === "changed") {
+    bodyMd += "\n**访问密码**：" + tier;
   }
   const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + new Date().toLocaleString("zh-CN"));
   try {
-    if (channel === "webhook") await sendWebhook(card);
-    else await sendApp(card);
+    if (channel === "group") {
+      // 群聊两种发法：优先应用身份（拉过群列表），否则群机器人 webhook
+      const hook = await getSecret(WEBHOOK_REF);
+      if (cfg.notifyChatId) await sendApp(card);
+      else if (hook) await sendWebhook(card);
+      else throw new Error("群聊未配置：点「拉取群列表」选群（走应用），或填群机器人 webhook 地址");
+    } else {
+      if (!cfg.notifyOpenId) throw new Error("私聊需要 open_id（开放平台消息日志里可查）");
+      await sendApp(card);
+    }
     pushEvent(event, "通知已发送");
     return { ok: true };
   } catch (e) {
@@ -309,8 +313,12 @@ function startLoginServer(ctx: AnyCtx): http.Server {
       const { isLocal, ip } = classify(req);
       // DNS rebinding 防护：本机直连的请求 Host 必须是 9091 的合法形态
       if (isLocal && !LOCAL_HOSTS.has(String(req.headers.host || ""))) { res.writeHead(403); res.end(); return; }
-      // CORS 白名单：只允许本机 DSH 页面；带凭据的跨站写一律 403（防 drive-by）
-      if (origin) {
+      // CORS 白名单：本机 DSH 页面（3080）跨端口走 CORS；远端页面与隧道域同源（Origin == 自身 Host），
+      // 浏览器表单/fetch 自带的这个 Origin 必须放行——否则远程登录 POST 一律 403（用户实撞的 bug）。
+      // 恶意网站跨站写的 Origin ≠ 本站 Host，仍然 403（防 drive-by）。
+      const host0 = String(req.headers.host || "");
+      const selfOrigin = origin === "https://" + host0 || origin === "http://" + host0;
+      if (origin && !selfOrigin) {
         if (CORS_ORIGINS.has(origin)) {
           res.setHeader("Access-Control-Allow-Origin", origin);
           res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -414,7 +422,6 @@ function startLoginServer(ctx: AnyCtx): http.Server {
             running: !!cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid),
             url: currentUrl,
             passwordMask: password.slice(0, 4) + "••••••••",
-            policy: cfg.passwordPolicy || "full",
             autoRestart: cfg.autoRestart !== false,
             sessionDays: Number(cfg.sessionDays) || 7,
             channel: cfg.notifyChannel || "off",
@@ -496,12 +503,15 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           // 页面设置：存本插件 settings.json + 内存即时生效——不写 profile、不重启条目、不换链接
           const json = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
           const fields: Record<string, unknown> = {};
-          if (json.notifyChannel !== undefined) fields.notifyChannel = String(json.notifyChannel);
+          if (json.notifyChannel !== undefined) {
+            const ch = String(json.notifyChannel);
+            if (!["off", "group", "dm"].includes(ch)) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "通道取值非法" })); return; }
+            fields.notifyChannel = ch;
+          }
           if (json.notifyAppId !== undefined) fields.notifyAppId = String(json.notifyAppId);
           if (json.notifyOpenId !== undefined) fields.notifyOpenId = String(json.notifyOpenId);
           if (json.notifyChatId !== undefined) fields.notifyChatId = String(json.notifyChatId);
           if (json.notifyChatName !== undefined) fields.notifyChatName = String(json.notifyChatName);
-          if (json.passwordPolicy !== undefined) fields.passwordPolicy = String(json.passwordPolicy);
           if (json.autoRestart !== undefined) fields.autoRestart = !!json.autoRestart;
           if (json.sessionDays !== undefined) fields.sessionDays = Math.min(Math.max(parseInt(String(json.sessionDays), 10) || 7, 1), 30);
           cfg = { ...cfg, ...fields } as Config;
@@ -614,20 +624,35 @@ function blockValue(blockText: string, key: string): string | null {
 }
 
 function loadSettings(): Config {
-  try {
-    return JSON.parse(readFileSync(SETTINGS_FILE, "utf8")) as Config;
-  } catch {
-    // 旧版本迁移：profile 用户层的运行时键搬进 settings.json（一次性）
-    const cur = readUserBlock();
-    const s: Record<string, unknown> = {};
-    if (cur) {
-      for (const k of ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "passwordPolicy", "sessionDays"] as const) {
-        const v = blockValue(cur.text, k);
-        if (v !== null) s[k] = v === "true" ? true : v === "false" ? false : (k === "sessionDays" ? Number(v) : v);
+  const migrateChannel = (c: unknown): string => {
+    // 旧模型（webhook/app 按传输方式）→ 新模型（group/dm 按收件人）
+    if (c === "webhook") return "group";
+    if (c === "app") return "group";
+    if (c === "dm" || c === "group" || c === "off") return c;
+    return "off";
+  };
+  const raw: Record<string, unknown> = (() => {
+    try { return JSON.parse(readFileSync(SETTINGS_FILE, "utf8")); }
+    catch {
+      // 首次启动：profile 用户层的运行时键一次性搬进 settings.json
+      const cur = readUserBlock();
+      const s: Record<string, unknown> = {};
+      if (cur) {
+        for (const k of ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "sessionDays"] as const) {
+          const v = blockValue(cur.text, k);
+          if (v !== null) s[k] = v === "true" ? true : v === "false" ? false : (k === "sessionDays" ? Number(v) : v);
+        }
       }
+      return s;
     }
-    return s as Config;
+  })();
+  const s = raw as Config;
+  s.notifyChannel = migrateChannel(s.notifyChannel) as Config["notifyChannel"];
+  if (!s.notifyChatId && s.notifyChannel === "group" && s.notifyOpenId) {
+    // app+open_id 且没选过群 → 语义上更像私聊
+    s.notifyChannel = "dm";
   }
+  return s;
 }
 
 function saveSettings(): void {
@@ -639,7 +664,6 @@ function saveSettings(): void {
     notifyOpenId: cfg.notifyOpenId || "",
     notifyChatId: cfg.notifyChatId || "",
     notifyChatName: cfg.notifyChatName || "",
-    passwordPolicy: cfg.passwordPolicy || "full",
     sessionDays: Number(cfg.sessionDays) || 7,
   };
   try { writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); } catch { /* best effort */ }
@@ -767,6 +791,14 @@ function renderCaddyfile(): string {
 
 :4080 {
 	bind 127.0.0.1
+	# 访问日志：定位"远程 403"到底有没有到我们的门（没到 = 网络路径被拦）
+	log {
+		output file ${JSON.stringify(join(RUN_DIR, "access.log"))} {
+			roll_size 1MiB
+			roll_keep 2
+		}
+		level INFO
+	}
 	@authed header_regexp Cookie .*{$RC_TOKEN}.*
 	@authed-dsh header_regexp Cookie dsh-auth-.*
 	@login path /rc-login

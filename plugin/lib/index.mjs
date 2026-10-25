@@ -43,20 +43,15 @@ const Config = z.object({
 	enabled: z.boolean().default(false).describe("启用远程访问（关闭即回收隧道；开启产生新的临时链接）"),
 	cloudflaredPath: z.string().default("").describe("cloudflared 路径（留空自动探测）"),
 	caddyPath: z.string().default("").describe("caddy 路径（留空自动探测）"),
-	notifyChannel: z.enum([
+	notifyChannel: z.preprocess((v) => v === "webhook" || v === "app" ? "group" : v, z.enum([
 		"off",
-		"webhook",
-		"app"
-	]).default("off").describe("飞书通知通道"),
+		"group",
+		"dm"
+	]).default("off")).describe("飞书通知：群聊或私聊"),
 	notifyAppId: z.string().default("").describe("飞书 App ID（app 通道）"),
 	notifyOpenId: z.string().default("").describe("私聊通知接收者 open_id（群通知不需要，页面可拉群列表自动选）"),
 	notifyChatId: z.string().default("").describe("群通知 chat_id（页面「拉取群列表」自动填）"),
 	notifyChatName: z.string().default("").describe("群通知显示名（随 chat_id 保存）"),
-	passwordPolicy: z.enum([
-		"full",
-		"mask",
-		"off"
-	]).default("full").describe("URL 变化通知附带密码的档位（full 才能在换域后自救）"),
 	autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）"),
 	sessionDays: z.number().int().min(1).max(30).default(7).describe("远程会话有效天数（1-30，不可永久）")
 });
@@ -123,10 +118,8 @@ let fiberAlive = null;
 const timers = /* @__PURE__ */ new Set();
 const failCounts = /* @__PURE__ */ new Map();
 const revealAt = /* @__PURE__ */ new Map();
-function notifyText(policy) {
-	if (policy === "full") return password;
-	if (policy === "mask") return password.slice(0, 4) + "••••••••（完整密码见 DSH 页面密码卡）";
-	return null;
+function notifyText() {
+	return password;
 }
 function cardFor(title, color, bodyMd, url, note) {
 	const elements = [{
@@ -220,7 +213,7 @@ async function sendNotify(ctx, event, url) {
 	const channel = cfg.notifyChannel || "off";
 	if (channel === "off") return {
 		ok: false,
-		error: "通知通道未开启"
+		error: "通知未开启"
 	};
 	const [title, color] = {
 		started: ["远程访问已开启", "green"],
@@ -229,16 +222,20 @@ async function sendNotify(ctx, event, url) {
 		recovered: ["远程访问已恢复", "green"],
 		test: ["测试通知", "grey"]
 	}[event] ?? ["远程访问", "grey"];
-	const tier = notifyText(cfg.passwordPolicy || "full");
+	const tier = notifyText();
 	let bodyMd = event === "down" || event === "recovered" ? url ? "地址：" + url : "隧道进程已退出，正在自动恢复。" : "**访问地址**\n" + url;
-	if (event === "started" || event === "changed" || event === "test") {
-		if (tier === null) bodyMd += "\n密码：略（passwordPolicy=off）";
-		else if (event !== "test") bodyMd += "\n**访问密码**：" + tier;
-	}
+	if (event === "started" || event === "changed") bodyMd += "\n**访问密码**：" + tier;
 	const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
 	try {
-		if (channel === "webhook") await sendWebhook(card);
-		else await sendApp(card);
+		if (channel === "group") {
+			const hook = await getSecret(WEBHOOK_REF);
+			if (cfg.notifyChatId) await sendApp(card);
+			else if (hook) await sendWebhook(card);
+			else throw new Error("群聊未配置：点「拉取群列表」选群（走应用），或填群机器人 webhook 地址");
+		} else {
+			if (!cfg.notifyOpenId) throw new Error("私聊需要 open_id（开放平台消息日志里可查）");
+			await sendApp(card);
+		}
 		pushEvent(event, "通知已发送");
 		return { ok: true };
 	} catch (e) {
@@ -334,7 +331,9 @@ function startLoginServer(ctx) {
 				res.end();
 				return;
 			}
-			if (origin) {
+			const host0 = String(req.headers.host || "");
+			const selfOrigin = origin === "https://" + host0 || origin === "http://" + host0;
+			if (origin && !selfOrigin) {
 				if (CORS_ORIGINS.has(origin)) {
 					res.setHeader("Access-Control-Allow-Origin", origin);
 					res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -451,7 +450,6 @@ function startLoginServer(ctx) {
 						running: !!cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid),
 						url: currentUrl,
 						passwordMask: password.slice(0, 4) + "••••••••",
-						policy: cfg.passwordPolicy || "full",
 						autoRestart: cfg.autoRestart !== false,
 						sessionDays: Number(cfg.sessionDays) || 7,
 						channel: cfg.notifyChannel || "off",
@@ -541,12 +539,23 @@ function startLoginServer(ctx) {
 				if (req.method === "POST" && path === "/rc-api/config") {
 					const json = JSON.parse(await readBody(req) || "{}");
 					const fields = {};
-					if (json.notifyChannel !== void 0) fields.notifyChannel = String(json.notifyChannel);
+					if (json.notifyChannel !== void 0) {
+						const ch = String(json.notifyChannel);
+						if (![
+							"off",
+							"group",
+							"dm"
+						].includes(ch)) {
+							res.writeHead(400, { "Content-Type": "application/json" });
+							res.end(JSON.stringify({ error: "通道取值非法" }));
+							return;
+						}
+						fields.notifyChannel = ch;
+					}
 					if (json.notifyAppId !== void 0) fields.notifyAppId = String(json.notifyAppId);
 					if (json.notifyOpenId !== void 0) fields.notifyOpenId = String(json.notifyOpenId);
 					if (json.notifyChatId !== void 0) fields.notifyChatId = String(json.notifyChatId);
 					if (json.notifyChatName !== void 0) fields.notifyChatName = String(json.notifyChatName);
-					if (json.passwordPolicy !== void 0) fields.passwordPolicy = String(json.passwordPolicy);
 					if (json.autoRestart !== void 0) fields.autoRestart = !!json.autoRestart;
 					if (json.sessionDays !== void 0) fields.sessionDays = Math.min(Math.max(parseInt(String(json.sessionDays), 10) || 7, 1), 30);
 					cfg = {
@@ -685,25 +694,35 @@ function blockValue(blockText, key) {
 	return m ? m[1].trim().replace(/^["']|["']$/g, "") : null;
 }
 function loadSettings() {
-	try {
-		return JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
-	} catch {
-		const cur = readUserBlock();
-		const s = {};
-		if (cur) for (const k of [
-			"enabled",
-			"autoRestart",
-			"notifyChannel",
-			"notifyAppId",
-			"notifyOpenId",
-			"passwordPolicy",
-			"sessionDays"
-		]) {
-			const v = blockValue(cur.text, k);
-			if (v !== null) s[k] = v === "true" ? true : v === "false" ? false : k === "sessionDays" ? Number(v) : v;
+	const migrateChannel = (c) => {
+		if (c === "webhook") return "group";
+		if (c === "app") return "group";
+		if (c === "dm" || c === "group" || c === "off") return c;
+		return "off";
+	};
+	const s = (() => {
+		try {
+			return JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
+		} catch {
+			const cur = readUserBlock();
+			const s = {};
+			if (cur) for (const k of [
+				"enabled",
+				"autoRestart",
+				"notifyChannel",
+				"notifyAppId",
+				"notifyOpenId",
+				"sessionDays"
+			]) {
+				const v = blockValue(cur.text, k);
+				if (v !== null) s[k] = v === "true" ? true : v === "false" ? false : k === "sessionDays" ? Number(v) : v;
+			}
+			return s;
 		}
-		return s;
-	}
+	})();
+	s.notifyChannel = migrateChannel(s.notifyChannel);
+	if (!s.notifyChatId && s.notifyChannel === "group" && s.notifyOpenId) s.notifyChannel = "dm";
+	return s;
 }
 function saveSettings() {
 	const s = {
@@ -714,7 +733,6 @@ function saveSettings() {
 		notifyOpenId: cfg.notifyOpenId || "",
 		notifyChatId: cfg.notifyChatId || "",
 		notifyChatName: cfg.notifyChatName || "",
-		passwordPolicy: cfg.passwordPolicy || "full",
 		sessionDays: Number(cfg.sessionDays) || 7
 	};
 	try {
@@ -889,6 +907,14 @@ function renderCaddyfile() {
 
 :4080 {
 	bind 127.0.0.1
+	# 访问日志：定位"远程 403"到底有没有到我们的门（没到 = 网络路径被拦）
+	log {
+		output file ${JSON.stringify(join(RUN_DIR, "access.log"))} {
+			roll_size 1MiB
+			roll_keep 2
+		}
+		level INFO
+	}
 	@authed header_regexp Cookie .*{$RC_TOKEN}.*
 	@authed-dsh header_regexp Cookie dsh-auth-.*
 	@login path /rc-login
