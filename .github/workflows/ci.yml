@@ -107,3 +107,27 @@ jobs:
         run: |
           # 在目标平台用 BSD grep 复跑：[:ascii:] 之类 GNU 扩展的差异只能在这里暴露
           bash scripts/check-bash32-pitfall.sh
+
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: build plugin
+        run: |
+          npm ci --prefix plugin
+          npm run build --prefix plugin
+
+      - name: typecheck
+        run: npm run typecheck --prefix plugin
+
+      - name: lib drift check
+        run: |
+          # lib/ 入库交付（git 源按 commit 安装即得产物）：重建后必须与入库版本一致
+          git diff --exit-code plugin/lib || { echo "lib/ is stale — run npm run build and commit"; exit 1; }
+          echo "lib/ fresh"

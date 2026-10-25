@@ -168,6 +168,16 @@ dsh-web restart
 
 系统架构、设计决策、组件交互见 [docs/architecture.md](docs/architecture.md)。
 
+## DSH 插件——`@oh-summy/dsh-remote`
+
+本仓库同时把同一能力做成了 DSH 原生插件（`plugin/`）：在 DSH 自己的 UI 里启用——Settings → Built-in plugins →
+远程访问——不开终端就能拿到 Cloudflare 临时链接 + 密码门。设计与实现事实：[docs/dsh-plugin-design.md](docs/dsh-plugin-design.md)。
+
+- 安装（装进 DSH profile）：`dsh plugin --profile web add @oh-summy/dsh-remote`（tag `v0.4.0` 发布后可从市场安装）。
+- 插件取代脚本网关的 watchdog/auth 层：跑在 DSH 宿主进程内，自行管理 `cloudflared` + `caddy`，登录页由自己的
+  listener 承载。二选一启用，不要同时开（插件发现 4080 被脚本网关占用会 fail-loud：先 `dsh-web stop`）。
+- 通知凭据绝不写进配置文件——走 DSH 的凭据缝（`~/.dsh/.credentials.yaml`），页面只显示掩码。
+
 ## 路线图
 
 各阶段进度与后续计划见 [docs/roadmap.md](docs/roadmap.md)。

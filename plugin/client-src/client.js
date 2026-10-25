@@ -17,7 +17,7 @@ function App() {
   const [msg, setMsg] = useState("");
   const [shownPassword, setShownPassword] = useState(null);
 
-  const refresh = () => api("/rc-api/state").then(setState).catch((e) => setMsg("读取状态失败：" + e.message));
+  const refresh = () => api("/rc-api/state").then(setState).catch(() => setMsg("插件未启用或正在启动…（Settings 表单里勾选 enabled）"));
   useEffect(() => { refresh(); const t = setInterval(refresh, 5000); return () => clearInterval(t); }, []);
 
   const act = (path, body, done) => {

@@ -276,7 +276,7 @@ function classify(req: http.IncomingMessage): { isLocal: boolean; ip: string } {
   return { isLocal, ip: cfIp || xff || socketAddr };
 }
 
-function startLoginServer(ctx: AnyCtx, isAlive: () => boolean): http.Server {
+function startLoginServer(ctx: AnyCtx): http.Server {
   const server = http.createServer(async (req, res) => {
     try {
       const origin = String(req.headers.origin || "");
@@ -343,7 +343,7 @@ function startLoginServer(ctx: AnyCtx, isAlive: () => boolean): http.Server {
         if (req.method === "GET" && path === "/rc-api/state") {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
-            running: !!cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid) && isAlive(),
+            running: !!cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid),
             url: currentUrl,
             passwordMask: password.slice(0, 4) + "••••••••",
             policy: cfg.passwordPolicy || "full",
@@ -596,7 +596,7 @@ export function apply(ctx: AnyCtx, config: Config = {}) {
       if (!isAlive()) return;
       await ensureSecrets(ctx);
       if (!isAlive()) return;
-      loginServer = startLoginServer(ctx, isAlive);
+      loginServer = startLoginServer(ctx);
       await new Promise<void>((resolve, reject) => {
         loginServer!.once("error", reject);
         loginServer!.listen(LOGIN_PORT, "127.0.0.1", () => resolve());

@@ -8,7 +8,7 @@
 
 在 DSH 网页点开关 → 拿到 Cloudflare 临时链接 + 访问密码，浏览器远程使用本机 DSH；URL 变化可（可选）推飞书。
 
-1. 页面一键启停（终端 CLI 保留为后备）。
+1. 页面开关启停（Settings 表单勾选 enabled；终端 CLI 保留为后备）。
 2. 临时 URL 自动捕获/展示/复制，变化自动更新。
 3. 密码门：自动生成强密码；远程登录一次直达 DSH；5 次失败锁 IP 5 分钟。
 4. 敏感值页面默认掩码/presence、手动 reveal；存储走 `dsh-credentials` 凭据缝，不进配置文件。
@@ -34,16 +34,17 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 - **manager**：spawn/回收 cloudflared + caddy；日志 grep 捕 URL（45s 超时）；启动前端口残留探测（独立 run 目录 `~/.remote-control/run-plugin/`，与 v0.3.x 隔离，归属不明就 fail-loud 不抢端口）。
 - **登录页**：插件自持 `127.0.0.1:9091`（替代 auth-server.py 独立进程）；密码比对 + 锁 IP + DSH 签名 cookie（HMAC 算法照抄 auth-server.py，移植 JS）。
 - **通知**：事件 → 飞书卡片（webhook POST 或 open API），原生 fetch，无新依赖。
-- **client**：Plugins 页配置页（开关 / URL / 密码 / 凭据 / 测试按钮 / 事件流），`@Remote` 调宿主。
+- **client**：Settings → Built-in plugins 的「远程访问」tab（状态 / URL 复制 / 密码 mask+reveal / 凭据 / 测试按钮 / 事件流），数据经自有 listener 的 `/rc-api/*`（Caddy 路由：本机直过、远端须过门）。
 
 技术栈：TypeScript + React（宿主契约决定）；cloudflared/caddy 照用现成 Go 二进制。
 
 ## 配置与凭据
 
-- `remote.enabled`（volatile）、`remote.binary.*`（volatile）→ 普通 config。
+- 顶层键（patch 的 `config.enabled` 等），**全部非 volatile**（事实 12 superseded / 17）。
+- `enabled`（boolean，默认 false）、`cloudflaredPath` / `caddyPath`（字符串，留空探测）→ 普通 config。
 - `password` / `webhookUrl` / `appSecret` → **dsh-credentials record**（轮换即时生效、不经 config、不落盘到 patch）。
-- `appId` → 普通字段，页面显示尾 4 位；`openId` → 明文 + 获取引导文案。
-- `passwordPolicy: full|mask|off`，**默认 full**——换域后旧 cookie 失效，只有 full 能让远端用户自救（v0.3.x 默认即 full）；选 mask/off 时 UI 明示"未另存完整密码将无法自救"。
+- `notifyChannel`（off|webhook|app，默认 off）、`notifyAppId`、`notifyOpenId`、`passwordPolicy`（full|mask|off，**默认 full**——换域后旧 cookie 失效，只有 full 能让远端用户自救，v0.3.x 默认即 full；选 mask/off 时 UI 明示"未另存完整密码将无法自救"）。
+- appId 非秘密：state 接口原样返回，页面 v1 不展示（v2 可加尾 4 位显示）。
 
 ## 已知坑与硬事实（两轮审查沉淀，实现时逐条对照）
 
@@ -58,7 +59,7 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 9. 密码明文不能进 profile patch（config-editor 落盘 + `.bak` 备份扩散）——这就是走凭据缝的原因。
 10. 飞书发消息端点是 `im/v1/messages`（v4 是历史版本）。
 11. 安全事实：TLS 在 CF 边缘终止，回环明文；128 位密码门是公网到本机 full-access agent 的唯一屏障——密码强度不可妥协。
-12. volatile-only 变更原地生效，非 volatile 触发条目重启——所以 `remote.*` 全部声明 volatile；若 M1 证明凭据缝不可用，secret 退回 config-secret 并接受"编辑换址 + changed 通知"。
+12. ~~volatile-only 变更原地生效~~（被事实 17 取代）：DSH 的 volatile 运行时值是 cosmokit 引用包装，第三方插件在自身依赖树里拿不到带 volatile 的 zod 实例——v1 全部非 volatile，接受"每次配置变更 = 条目重启换址 + full 密码通知自救"。
 13. cloudflared quick tunnel 会自己死（边缘 "Connection terminated" 后退出，本机实测 25s 即发生；quick tunnel 官方声明无可用性保证）——这就是 v0.3.x watchdog 的由来；M2 最小自愈 = 子进程 exit → respawn（进程内，一行 backoff 都不用）。
 14. 清理 API = `ctx.effect(() => { ...; return disposer })`（注册即执行 setup，fiber 销毁时执行 disposer）；`ctx.on("dispose")` 从不触发，官方插件零使用——子进程/定时器的回收必须走 effect（M1 实测验证：effect disposer 杀进程 + 清状态文件均生效）。
 15. HMR 不感知 link: 包内文件变化（bundle patch 翻 enabled 不会自动重载）——开发期用触碰 profile 层 patch 强制重组；运行时开关不受影响（M3 的开关走 settings API 提交，不走文件编辑）。
@@ -68,6 +69,7 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 19. 隧道 `--url` 必须指向 Caddy 门（4080）**绝不直连 DSH**；Caddy 的 `header_up Host` 必须是裸 `127.0.0.1:3080`（带 scheme 会改写 authority，fence 拒签）。
 20. 开发期事实：HMR 不感知 link: 包的代码/文件变化（只有 profile 层 patch 触发配置重组），**模块代码变更必须重启宿主**；运行时开关不受影响（发布后用户走 settings 表单）。
 21. 门的安全模型（第 1 轮自审定型）：`rc_session` 的值就是门令牌（Caddy 正则门与会话校验共用，服务端 timingSafeEq）；classify 判定 = cf-connecting-ip 存在即远端、Caddy 追加的 loopback XFF 仍算本机；CORS/Host 双白名单挡 drive-by 与 DNS rebinding；boot 的每个 await 后检查 fiber 生命旗标（防销毁后拉起）；reapOrphans 杀前核对进程名（防 PID 复用误杀）。
+22. 交付链（第 3 轮自审定型）：**`plugin/lib/` 入库**（git 源按 pinnedCommit 安装即得与源码一致的产物，不依赖安装期生命周期脚本），CI 加 plugin job（build + typecheck + `git diff --exit-code lib/` 漂移检查）——产物无法静默漂移。
 
 ## 里程碑（怎么算完成）
 
