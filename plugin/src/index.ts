@@ -563,7 +563,7 @@ function ensureUserOverride(enabled: boolean): void {
 
 // 用户层配置写入：整个 dsh-remote override 块按当前值重建（未指定的键沿用原值）。
 // profile patch 是 HMR 监视的文件——写完条目自动以新配置重启。
-const USER_KEYS = ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "passwordPolicy", "cloudflaredPath", "caddyPath"] as const;
+const USER_KEYS = ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "passwordPolicy", "sessionDays", "cloudflaredPath", "caddyPath"] as const;
 
 function readUserBlock(): { lines: string[]; start: number; end: number; text: string } | null {
   const s = readFileSync(PROFILE_PATCH, "utf8");
@@ -608,6 +608,7 @@ function writeUserConfig(fields: Record<string, unknown>): void {
     merged.notifyAppId ? `    notifyAppId: ${q(merged.notifyAppId)}` : null,
     merged.notifyOpenId ? `    notifyOpenId: ${q(merged.notifyOpenId)}` : null,
     merged.passwordPolicy ? `    passwordPolicy: ${String(merged.passwordPolicy)}` : null,
+    merged.sessionDays ? `    sessionDays: ${Number(merged.sessionDays)}` : null,
     merged.cloudflaredPath ? `    cloudflaredPath: ${q(merged.cloudflaredPath)}` : null,
     merged.caddyPath ? `    caddyPath: ${q(merged.caddyPath)}` : null,
   ].filter(Boolean).join("\n");

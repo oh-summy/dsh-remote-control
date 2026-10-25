@@ -11,7 +11,10 @@ const MARKET_INDEX = "https://oh-summy.github.io/dsh-nano-market/index.json";
 const SELF = "@oh-summy/dsh-remote";
 
 function rcApi(path, options) {
-  return fetch(API_BASE + path, { credentials: "include", ...options }).then(async (res) => {
+  // 默认 8s 超时：条目重启时 9091 短暂下线，socket 半开会让无超时的 fetch 挂到浏览器上限
+  const opts = { credentials: "include", ...options };
+  if (!opts.signal) opts.signal = AbortSignal.timeout(8000);
+  return fetch(API_BASE + path, opts).then(async (res) => {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "HTTP " + res.status);
     return json;
@@ -57,13 +60,27 @@ const NM_CSS = `
 .nm-remote .nm-row-plain { cursor: default; }
 .nm-seg { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: #6b7280; }
 .nm-seg.on { background: #1f2328; border-color: #1f2328; color: #fff; font-weight: 600; }
+.nm-eye { background: none; border: none; padding: 3px; cursor: pointer; display: inline-flex; align-items: center; color: #6b7280; border-radius: 6px; }
+.nm-eye:hover { color: #1f2328; background: #f3f4f6; }
+.nm-eye svg { width: 18px; height: 18px; display: block; }
 `;
+
+// 密码显隐 = 小眼睛图标（无文字按钮）
+const EYE_ON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
 // ---------- vanilla 渲染辅助 ----------
 
 function nmShell(root) {
   root.innerHTML = `<style>${NM_CSS}</style><div class="nm"></div>`;
   return root.querySelector(".nm");
+}
+
+// 任何一步都不允许永久 pending（页面重载后 RPC 偶发不返回）：超时即报错继续渲染
+function withTimeout(p, ms, tag) {
+  let t;
+  const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(new Error(tag)), ms); });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
 }
 
 // ---------- 远程访问详情（本插件专属管理页） ----------
@@ -75,7 +92,7 @@ function renderRemoteDetail(container, initialMsg) {
         <div class="nm-row nm-row-plain" id="rc-runrow"><span class="nm-dot-off">○ 隧道状态读取中…</span></div>
         <div id="rc-urlrow"></div>
         <div class="nm-row nm-row-plain"><span class="nm-label">访问密码</span><span class="nm-code" id="rc-pw">••••</span>
-          <button class="nm-btn" id="rc-reveal">显示</button>
+          <button class="nm-eye" id="rc-reveal" title="显示密码" aria-label="显示密码">${EYE_ON}</button>
           <button class="nm-btn" id="rc-copypw">复制密码</button>
           <button class="nm-btn-d" id="rc-reset">重置密码</button></div>
         <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
@@ -112,9 +129,10 @@ function renderRemoteDetail(container, initialMsg) {
     const copyBtn = q("#rc-copy");
     if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText(st.url); setMsg("链接已复制"); };
     q("#rc-pw").textContent = shown ? st.password : st.passwordMask;
+    setEye(shown);
     const ar = q("#rc-arestart");
     ar.className = "nm-sw" + (st.autoRestart ? "" : " off");
-    ar.onclick = () => act("/rc-api/config", { autoRestart: !st.autoRestart }, st.autoRestart ? "自动重启已关闭" : "自动重启已开启");
+    ar.onclick = () => act("/rc-api/config", st.autoRestart ? "正在关闭自动重启…" : "正在开启自动重启…", { autoRestart: !st.autoRestart });
     const chNow = st.channel || "off";
     if (chNow !== lastChRendered || !q("#rc-chrow .nm-seg")) { lastChRendered = chNow; renderChannel(); } // 值没变不重建：避免轮询打断点击
     q("#rc-events").innerHTML = st.events.length === 0 ? "（暂无）" : st.events.map((e) => `<div class="nm-event">${nmEsc(e.time)} · ${nmEsc(e.type)} · ${nmEsc(e.detail)}</div>`).join("");
@@ -130,7 +148,7 @@ function renderRemoteDetail(container, initialMsg) {
       `<button class="nm-seg${ch === v ? " on" : ""}" data-ch="${v}">${t2}</button>`).join("") +
       `<span style="flex:1"></span><button class="nm-btn" id="rc-test" ${ch === "off" ? "disabled style=\"opacity:.5\"" : ""}>发送测试</button>`;
     for (const b of row.querySelectorAll("[data-ch]")) {
-      b.onclick = () => { if (b.dataset.ch !== ch) act("/rc-api/config", { notifyChannel: b.dataset.ch }, "通道已切换"); };
+      b.onclick = () => { if (b.dataset.ch !== ch) act("/rc-api/config", "通道已切换", { notifyChannel: b.dataset.ch }); };
     }
     const tb = q("#rc-test");
     if (tb) tb.onclick = () => act("/rc-api/test", "测试中…");
@@ -147,10 +165,10 @@ function renderRemoteDetail(container, initialMsg) {
     if (ch === "webhook") {
       form.innerHTML = `
         <div class="nm-row nm-row-plain"><span class="nm-label">webhook 地址</span><input class="nm-input" id="rc-hook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></div>
-        <div class="nm-note">群机器人不需要 App ID 和 open_id：在飞书群里添加「自定义机器人」拿到 webhook 地址粘贴 here，消息发到那个群。</div>`;
+        <div class="nm-note">群机器人不需要 App ID 和 open_id：在飞书群里添加「自定义机器人」拿到 webhook 地址粘贴到这里，消息发到那个群。</div>`;
       const inp = form.querySelector("#rc-hook");
       inp.value = st.webhookUrl || "";
-      inp.onchange = () => act("/rc-api/notify-secret", { webhookUrl: inp.value.trim() || undefined }, "webhook 地址已保存");
+      inp.onchange = () => act("/rc-api/notify-secret", "webhook 地址已保存", { webhookUrl: inp.value.trim() || undefined });
       return;
     }
     // app 通道
@@ -177,19 +195,19 @@ function renderRemoteDetail(container, initialMsg) {
     if (!oid.value && st.openId) oid.value = st.openId;
     policy.value = st.policy || "full";
     if (st.sessionDays) q("#rc-days").value = String(st.sessionDays);
-    const save = () => act("/rc-api/config", {
+    const save = () => act("/rc-api/config", "已保存（隧道将按新配置重启）", {
       notifyAppId: appId.value.trim() || undefined,
       notifyOpenId: oid.value.trim() || undefined,
       sessionDays: parseInt(q("#rc-days").value, 10) || undefined,
-    }, "已保存（隧道将按新配置重启）");
+    });
     appId.onchange = save;
     oid.onchange = save;
-    policy.onchange = () => act("/rc-api/config", { passwordPolicy: policy.value }, "密码档位已更新");
+    policy.onchange = () => act("/rc-api/config", "密码档位已更新", { passwordPolicy: policy.value });
     form.querySelector("#rc-saveapp").onclick = async () => {
       setMsg("保存中…");
       try {
         await rcApi("/rc-api/notify-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appSecret: sec.value.trim() || undefined }) });
-        await act("/rc-api/config", { notifyAppId: appId.value.trim() || undefined, notifyOpenId: oid.value.trim() || undefined }, "应用凭据与接收者已保存");
+        await act("/rc-api/config", "应用凭据与接收者已保存", { notifyAppId: appId.value.trim() || undefined, notifyOpenId: oid.value.trim() || undefined });
       } catch (e) { setMsg("失败：" + e.message); }
     };
   }
@@ -206,9 +224,15 @@ function renderRemoteDetail(container, initialMsg) {
   }
   function done2(r) { return r && r.detail ? undefined : (r && r.ok ? "完成" : undefined); }
 
+  function setEye(on2) {
+    const e = q("#rc-reveal");
+    e.innerHTML = on2 ? EYE_OFF : EYE_ON;
+    e.title = on2 ? "隐藏密码" : "显示密码";
+    e.setAttribute("aria-label", on2 ? "隐藏密码" : "显示密码");
+  }
   q("#rc-reveal").onclick = async () => {
     if (shown) { shown = false; return refresh(); }
-    try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); shown = true; q("#rc-pw").textContent = r.password; setTimeout(() => { shown = false; refresh(); }, 30000); }
+    try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); shown = true; q("#rc-pw").textContent = r.password; setEye(true); setTimeout(() => { shown = false; refresh(); }, 30000); }
     catch (e) { setMsg("失败：" + e.message); }
   };
   q("#rc-copypw").onclick = async () => {
@@ -233,31 +257,63 @@ function renderRemoteDetail(container, initialMsg) {
 
 // ---------- Nano Market 主视图（列表 + 详情） ----------
 
-function mountNanoMarket(container, pm) {
+function mountNanoMarket(container, pm0) {
   const shell = nmShell(container);
   let selected = null;
   let bundles = null;
   let market = { loading: true };
   let msg = "";
   let cleanupRemote = null;
+  let remoteRunning = null; // SELF（远程访问）隧道状态：true/false；null = 管理面未就绪
+  let loadFailed = false;
+  let pm = pm0;
+
+  function applyRemote(r) {
+    // 隧道状态变化统一入口：值变了才提示 + 重渲染由调用方决定；首轮（null→值）不出文案
+    if (r === remoteRunning) return false;
+    const had = remoteRunning !== null;
+    remoteRunning = r;
+    if (had) msg = r ? "远程访问已开启" : "远程访问已停止";
+    return true;
+  }
+
+  function acquirePm() {
+    // apply 时捕获的代理在页面重载后可能已失效：挂载/重试时优先现取
+    try {
+      if (CTX && CTX.remote && CTX.remote.pluginManager) pm = CTX.remote.pluginManager;
+    } catch { /* 保持原值 */ }
+    return pm;
+  }
+
+  async function fetchBundles() {
+    const p = acquirePm();
+    if (!p || typeof p.listBundles !== "function") throw new Error("pluginManager 未就绪");
+    const r = await withTimeout(p.listBundles(), 6000, "读取插件列表超时");
+    const rows = (r && (r.value ?? r.result)) || [];
+    return Array.isArray(rows) ? rows : [];
+  }
 
   async function load() {
+    loadFailed = false;
     try {
-      const r = await pm.listBundles();
-      bundles = (r && (r.value ?? r.result)) || [];
-      if (!Array.isArray(bundles)) bundles = [];
-    } catch (e) { bundles = []; msg = "读取已安装插件失败：" + (e.message || e); }
+      bundles = await fetchBundles();
+    } catch (e) {
+      bundles = [];
+      msg = "读取已安装插件失败：" + (e.message || e);
+      loadFailed = true;
+    }
     if (bundles.length === 0) {
-      // remote 未就绪时可能拿到空列表：1.5s 后重试一次
+      // remote 未就绪时可能拿到空列表或死调用：延迟后重试一次（通道热身）
       await new Promise((r2) => setTimeout(r2, 1500));
       try {
-        const r2 = await pm.listBundles();
-        const rows2 = (r2 && (r2.value ?? r2.result)) || [];
-        if (Array.isArray(rows2) && rows2.length > 0) bundles = rows2;
-      } catch { /* 保持空 */ }
+        const rows2 = await fetchBundles();
+        if (rows2.length > 0) { bundles = rows2; msg = ""; loadFailed = false; }
+      } catch { /* 保持前面的结果 */ }
     }
+    try { const s = await withTimeout(rcApi("/rc-api/state"), 4000, "管理面超时"); applyRemote(!!s.running); }
+    catch { remoteRunning = null; }
     try {
-      const j = await (await fetch(MARKET_INDEX, { signal: AbortSignal.timeout(10000) })).json();
+      const j = await (await fetch(MARKET_INDEX, { signal: AbortSignal.timeout(6000) })).json();
       market = { plugins: j.plugins || [] };
     } catch (e) { market = { error: String(e.message || e) }; }
     render();
@@ -288,15 +344,18 @@ function mountNanoMarket(container, pm) {
   function renderList() {
     // 官方包（@deepseek-ai/*）是 DSH 宿主自己的组成件，不属于市场；本机插件 = 其余 bundles
     const mine = (bundles || []).filter((b) => String(b.name).startsWith("@oh-summy/")); // 只有本项目的插件才进 Nano Market
-    const mineRows = mine.map((b) => `
+    const mineRows = mine.map((b) => {
+      const on = b.name === SELF ? remoteRunning === true : !!b.enabled; // SELF 开关 = 隧道启停，其余 = 插件启停
+      return `
       <div class="nm-row" data-open="${nmEsc(b.name)}">
         <div class="nm-icon">🧩</div>
         <div style="flex:1">
           <div><span class="nm-name">${nmEsc(title(b))}</span>${b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}${b.source && String(b.source).indexOf("link:") === 0 ? `<span class="nm-badge">开发中</span>` : ""}${b.error ? `<span class="nm-badge-g">加载错误</span>` : ""}</div>
           <div class="nm-desc">${nmEsc(text(b.meta && b.meta.description) || text(b.description) || b.name)}</div>
         </div>
-        <button class="nm-sw${(b.name === SELF ? st.running : b.enabled) ? "" : " off"}" data-sw="${nmEsc(b.name)}" aria-label="${(b.name === SELF ? st.running : b.enabled) ? "停用" : "启用"}"><i></i></button>
-      </div>`).join("");
+        <button class="nm-sw${on ? "" : " off"}" data-sw="${nmEsc(b.name)}" aria-label="${on ? "停用" : "启用"}"><i></i></button>
+      </div>`;
+    }).join("");
     const plist = market.plugins || [];
     const mrows = plist.map((p) => {
       const installed = (bundles || []).some((b) => b.name === p.name);
@@ -315,13 +374,18 @@ function mountNanoMarket(container, pm) {
       : market.error ? `<div class="nm-empty">市场索引读取失败：${nmEsc(market.error)}</div>`
       : plist.length === 0 ? `<div class="nm-empty">市场还没有注册插件。发布流程（tag v0.4.0 → 市场上架）走完后，@oh-summy/dsh-remote 会作为第一个插件在这里出现。</div>`
       : mrows;
+    const localBody = loadFailed && mine.length === 0
+      ? `<div class="nm-empty">插件列表读取失败（页面重载后通道偶发未就绪）<button class="nm-btn" id="nm-retry" style="margin-left:8px">重试</button></div>`
+      : mine.length === 0 ? `<div class="nm-empty">（没有本机插件）</div>` : mineRows;
     shell.innerHTML = `
       <div class="nm-sec">市场插件</div>
       <div class="nm-card">${marketBody}</div>
       <div class="nm-sec">本机插件（未上架）</div>
-      <div class="nm-card">${mine.length === 0 ? `<div class="nm-empty">（没有本机插件）</div>` : mineRows}</div>
+      <div class="nm-card">${localBody}</div>
       <div class="nm-msg">${nmEsc(msg)}</div>
       <div class="nm-note">开关 = 插件的启用/停用，关了即不可用；点行进入管理。索引：https://oh-summy.github.io/dsh-nano-market/index.json</div>`;
+    const retryBtn = shell.querySelector("#nm-retry");
+    if (retryBtn) retryBtn.onclick = () => { msg = "正在重试…"; render(); load(); };
     for (const el of shell.querySelectorAll("[data-open]")) {
       el.addEventListener("click", () => { selected = el.getAttribute("data-open"); render(); });
     }
@@ -331,9 +395,11 @@ function mountNanoMarket(container, pm) {
         const name = el.getAttribute("data-sw");
         if (name === SELF) {
           // 本插件：开关 = 远程访问启停（不能卸载插件本体——这个页面自己会消失）
-          msg = st.running ? "正在停止…" : "正在启动…"; render();
+          msg = remoteRunning ? "正在停止…" : "正在启动…"; render();
           try { await rcApi("/rc-api/toggle", { method: "POST" }); } catch (e2) { msg = "失败：" + (e2.message || e2); }
           await load();
+          // toggle 会触发条目重启：重启窗口内读到的可能是旧状态，稍后补拉一次自愈
+          setTimeout(() => { load(); }, 3500);
           return;
         }
         const b = (bundles || []).find((x) => x.name === name);
@@ -356,29 +422,38 @@ function mountNanoMarket(container, pm) {
         <div class="nm-row nm-row-plain"><div class="nm-icon">🧩</div>
           <div style="flex:1"><div><span class="nm-name">${nmEsc(b ? title(b) : selected)}</span>${b && b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}</div>
           <div class="nm-desc">${nmEsc(b ? ((b.meta && b.meta.description) || b.description || "") : "")}</div></div></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">远程访问</span>
-          <button class="nm-sw${st.running ? "" : " off"}" id="nm-sw"><i></i></button>
-          <span class="nm-desc">${st.running ? "开启中——关闭后远程链接立即失效" : "已停止"}</span></div>
+        <div class="nm-row nm-row-plain"><span class="nm-label">插件启用</span>
+          <button class="nm-sw${b && b.enabled ? "" : " off"}" id="nm-sw"><i></i></button>
+          <span class="nm-desc">${b && b.enabled ? "已启用——关闭后该插件立即不可用" : "已停用"}</span></div>
       </div>`;
     shell.querySelector("#nm-back").onclick = () => { selected = null; render(); };
-    shell.querySelector("#nm-sw").onclick = async () => {
-      msg = st.running ? "正在停止…" : "正在启动…"; render();
-      try { await rcApi("/rc-api/toggle", { method: "POST" }); } catch (e2) { msg = "失败：" + (e2.message || e2); }
-      await load();
-    };
+    shell.querySelector("#nm-sw").onclick = () => { if (b) setBundle(b, !b.enabled); };
   }
 
   load(); // 拉取已安装列表 + 市场索引
   render();
+
+  // 列表态轻轮询：仅当隧道状态真实变化时才重渲染（不重建 DOM 就不会打断点击）；
+  // 条目重启窗口期读失败就跳过本轮，下一轮自愈。节点脱离文档后自行停止。
+  const poll = setInterval(async () => {
+    if (!container.isConnected) { clearInterval(poll); return; }
+    if (selected) return; // 详情页有自己的轮询
+    try {
+      const s = await rcApi("/rc-api/state");
+      if (applyRemote(!!s.running)) render();
+    } catch { /* 9091 重启窗口期，跳过 */ }
+  }, 5000);
 }
 
 // ---------- 槽位注册 ----------
 
 const inject = ["slots", "remote", "remote.pluginManager"];
-let NM_PM = null; // pluginManager remote（apply 时捕获，挂载时经闭包使用）
+let NM_PM = null; // pluginManager remote（apply 时捕获的初始引用）
+let CTX = null; // 保存 ctx：挂载/重试时现取最新 pluginManager（页面重载后旧代理可能失效）
 
 function apply(ctx) {
   if (!ctx.slots || !ctx.remote) return;
+  CTX = ctx;
   const pm = ctx.remote.pluginManager;
   if (!pm) { console.warn("[dsh-remote] remote.pluginManager 不可用"); return; }
   NM_PM = pm;

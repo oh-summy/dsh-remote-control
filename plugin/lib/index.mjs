@@ -626,6 +626,7 @@ const USER_KEYS = [
 	"notifyAppId",
 	"notifyOpenId",
 	"passwordPolicy",
+	"sessionDays",
 	"cloudflaredPath",
 	"caddyPath"
 ];
@@ -674,6 +675,7 @@ function writeUserConfig(fields) {
 		merged.notifyAppId ? `    notifyAppId: ${q(merged.notifyAppId)}` : null,
 		merged.notifyOpenId ? `    notifyOpenId: ${q(merged.notifyOpenId)}` : null,
 		merged.passwordPolicy ? `    passwordPolicy: ${String(merged.passwordPolicy)}` : null,
+		merged.sessionDays ? `    sessionDays: ${Number(merged.sessionDays)}` : null,
 		merged.cloudflaredPath ? `    cloudflaredPath: ${q(merged.cloudflaredPath)}` : null,
 		merged.caddyPath ? `    caddyPath: ${q(merged.caddyPath)}` : null
 	].filter(Boolean).join("\n");
