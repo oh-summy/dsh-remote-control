@@ -17,7 +17,7 @@ function App() {
   const [msg, setMsg] = useState("");
   const [shownPassword, setShownPassword] = useState(null);
 
-  const refresh = () => api("/rc-api/state").then(setState).catch(() => setMsg("插件未启用或正在启动…（Settings 表单里勾选 enabled）"));
+  const refresh = () => api("/rc-api/state").then(setState).catch(() => setMsg("插件未启用：点右上角 Open configuration file，把本插件的 enabled 改为 true（改动会产生新链接）"));
   useEffect(() => { refresh(); const t = setInterval(refresh, 5000); return () => clearInterval(t); }, []);
 
   const act = (path, body, done) => {
@@ -60,7 +60,7 @@ function App() {
         webhookUrl: document.getElementById("rc-hook").value.trim() || undefined,
         appSecret: document.getElementById("rc-sec").value.trim() || undefined,
       }, "凭据已保存（通道/App ID/open_id 在下方设置表单里改）") }, "保存凭据")),
-    h("p", { style: styles.note }, "通道、App ID、接收者 open_id、密码档位在 Settings → 远程访问 的设置表单里修改（改配置会重启隧道并产生新链接，密码会随 started 通知推送）。open_id 获取：开放平台给应用加 im:message 权限后，让机器人给目标发一条消息即可从 API 调试台拿到。"),
+    h("p", { style: styles.note }, "通道、App ID、接收者 open_id、密码档位在 Settings → Open configuration file 的本插件 config 里修改（改配置会重启隧道并产生新链接，密码会随 started 通知推送）。open_id 获取：开放平台给应用加 im:message 权限后，让机器人给目标发一条消息即可从 API 调试台拿到。"),
     msg && h("p", { style: styles.msg }, msg),
     h("h4", { style: styles.h }, "事件"),
     h("div", { style: styles.events },

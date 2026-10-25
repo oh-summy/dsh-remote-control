@@ -8,7 +8,7 @@
 
 在 DSH 网页点开关 → 拿到 Cloudflare 临时链接 + 访问密码，浏览器远程使用本机 DSH；URL 变化可（可选）推飞书。
 
-1. 页面开关启停（Settings 表单勾选 enabled；终端 CLI 保留为后备）。
+1. 页面开关启停：v1 经 Settings → Open configuration file 改本插件 `enabled`（dsh-settings 表单只显示 volatile 字段，全非 volatile = 无表单，事实 23）；终端 CLI 保留为后备。
 2. 临时 URL 自动捕获/展示/复制，变化自动更新。
 3. 密码门：自动生成强密码；远程登录一次直达 DSH；5 次失败锁 IP 5 分钟。
 4. 敏感值页面默认掩码/presence、手动 reveal；存储走 `dsh-credentials` 凭据缝，不进配置文件。
@@ -70,6 +70,7 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 20. 开发期事实：HMR 不感知 link: 包的代码/文件变化（只有 profile 层 patch 触发配置重组），**模块代码变更必须重启宿主**；运行时开关不受影响（发布后用户走 settings 表单）。
 21. 门的安全模型（第 1 轮自审定型）：`rc_session` 的值就是门令牌（Caddy 正则门与会话校验共用，服务端 timingSafeEq）；classify 判定 = cf-connecting-ip 存在即远端、Caddy 追加的 loopback XFF 仍算本机；CORS/Host 双白名单挡 drive-by 与 DNS rebinding；boot 的每个 await 后检查 fiber 生命旗标（防销毁后拉起）；reapOrphans 杀前核对进程名（防 PID 复用误杀）。
 22. 交付链（第 3 轮自审定型）：**`plugin/lib/` 入库**（git 源按 pinnedCommit 安装即得与源码一致的产物，不依赖安装期生命周期脚本），CI 加 plugin job（build + typecheck + `git diff --exit-code lib/` 漂移检查）——产物无法静默漂移。
+23. dsh-settings 表单**只显示 volatile 字段**（README："Forms expose only volatile fields"）——全非 volatile 的 v1 没有设置表单，启用/配置走 profile 配置文件（Settings → Open configuration file）；client 页已按此写文案。
 
 ## 里程碑（怎么算完成）
 
