@@ -60,7 +60,7 @@ function App() {
         webhookUrl: document.getElementById("rc-hook").value.trim() || undefined,
         appSecret: document.getElementById("rc-sec").value.trim() || undefined,
       }, "凭据已保存（通道/App ID/open_id 在下方设置表单里改）") }, "保存凭据")),
-    h("p", { style: styles.note }, "通道、App ID、接收者 open_id、密码档位在 Settings → 远程访问 的设置表单里修改。open_id 获取：开放平台给应用加 im:message 权限后，让机器人给目标发一条消息即可从 API 调试台拿到。"),
+    h("p", { style: styles.note }, "通道、App ID、接收者 open_id、密码档位在 Settings → 远程访问 的设置表单里修改（改配置会重启隧道并产生新链接，密码会随 started 通知推送）。open_id 获取：开放平台给应用加 im:message 权限后，让机器人给目标发一条消息即可从 API 调试台拿到。"),
     msg && h("p", { style: styles.msg }, msg),
     h("h4", { style: styles.h }, "事件"),
     h("div", { style: styles.events },
@@ -86,6 +86,8 @@ const styles = {
 };
 
 // host-side mount: register the page as a tab in Settings → Built-in plugins
+const inject = ["slots"];
+
 function apply(ctx) {
   if (!ctx.slots) return;
   ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({

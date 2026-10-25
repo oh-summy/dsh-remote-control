@@ -11,9 +11,11 @@ const out = `window.__ModuleLoader__.load({
 \tfactory: (require) => {
 \t\tvar module = { exports: {} };
 \t\tvar exports = module.exports;
+\t\tObject.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 \t\tconst React = require("react");
 \t\t${body}
 \t\texports.apply = apply;
+\t\texports.inject = inject;
 \t\treturn module.exports;
 \t}
 });
