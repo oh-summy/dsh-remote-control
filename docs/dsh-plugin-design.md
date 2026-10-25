@@ -63,6 +63,10 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 14. 清理 API = `ctx.effect(() => { ...; return disposer })`（注册即执行 setup，fiber 销毁时执行 disposer）；`ctx.on("dispose")` 从不触发，官方插件零使用——子进程/定时器的回收必须走 effect（M1 实测验证：effect disposer 杀进程 + 清状态文件均生效）。
 15. HMR 不感知 link: 包内文件变化（bundle patch 翻 enabled 不会自动重载）——开发期用触碰 profile 层 patch 强制重组；运行时开关不受影响（M3 的开关走 settings API 提交，不走文件编辑）。
 16. 凭据缝 cookie 链路已实测打通：读 `~/.dsh/.credentials.yaml` 的 browser-session secret → HMAC-SHA256 签 `dsh-auth-*` cookie → 被 3080 接受（200），裸请求被 fence 挡（401）。M2 登录页照此实现。
+17. Config 用 **zod**（官方先例 dsh-plugin-market/dsh-agent-loop，宿主 zod 4.6.7），**全部非 volatile**——DSH 的 volatile 运行时值是 cosmokit 引用包装（第三方插件在自身依赖树里拿不到带 volatile 的 zod 实例），v1 接受"每次配置变更 = 条目重启换址 + full 密码通知自救"（两轮审查认可的最坏情况回退）。
+18. 宿主服务必须声明 `export const inject = ["credentials"]`，否则 `ctx.credentials` 访问被拒（"cannot get property without inject"）。
+19. 隧道 `--url` 必须指向 Caddy 门（4080）**绝不直连 DSH**；Caddy 的 `header_up Host` 必须是裸 `127.0.0.1:3080`（带 scheme 会改写 authority，fence 拒签）。
+20. 开发期事实：HMR 不感知 link: 包的代码/文件变化（只有 profile 层 patch 触发配置重组），**模块代码变更必须重启宿主**；运行时开关不受影响（发布后用户走 settings 表单）。
 
 ## 里程碑（怎么算完成）
 
