@@ -132,28 +132,17 @@ function cardFor(title, color, lines, url, note) {
 			content: line
 		}
 	});
-	const actions = [];
-	if (url) actions.push({
-		tag: "button",
-		text: {
-			tag: "plain_text",
-			content: "打开 DSH"
-		},
-		url,
-		type: "primary"
-	});
-	actions.push({
-		tag: "button",
-		text: {
-			tag: "plain_text",
-			content: "oh-summy 市场"
-		},
-		url: MARKET_URL,
-		type: "default"
-	});
 	elements.push({
 		tag: "action",
-		actions
+		actions: [{
+			tag: "button",
+			text: {
+				tag: "plain_text",
+				content: "dsh-nano-market"
+			},
+			url: MARKET_URL,
+			type: "default"
+		}]
 	});
 	elements.push({
 		tag: "note",
@@ -251,7 +240,7 @@ async function sendNotify(ctx, event, url) {
 		"**访问密码**",
 		tier
 	];
-	const card = cardFor(title, color, lines, url, "By oh-summy · dsh-remote · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
+	const card = cardFor(title, color, lines, url, "dsh-remote By oh-summy · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
 	try {
 		if (channel === "group") {
 			const hook = await getSecret(WEBHOOK_REF);

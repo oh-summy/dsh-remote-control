@@ -150,7 +150,7 @@ function notifyText(): string {
 // ---------- notify ----------
 
 // 卡片结构为「复制友好」设计：标签行 / 内容行各自独立 div 区块，区块间天然留白；
-// "---" 渲染为分隔线；操作按钮含市场仓库入口；落款 By oh-summy
+// "---" 渲染为分隔线。链接在正文里本身可点可复制，不再放「打开 DSH」按钮（主人拍板：冗余）。
 const MARKET_URL = "https://github.com/oh-summy/dsh-nano-market";
 
 function cardFor(title: string, color: string, lines: string[], url: string | null, note: string) {
@@ -159,10 +159,9 @@ function cardFor(title: string, color: string, lines: string[], url: string | nu
     if (line === "---") elements.push({ tag: "hr" });
     else elements.push({ tag: "div", text: { tag: "lark_md", content: line } });
   }
-  const actions: any[] = [];
-  if (url) actions.push({ tag: "button", text: { tag: "plain_text", content: "打开 DSH" }, url, type: "primary" });
-  actions.push({ tag: "button", text: { tag: "plain_text", content: "oh-summy 市场" }, url: MARKET_URL, type: "default" });
-  elements.push({ tag: "action", actions });
+  elements.push({ tag: "action", actions: [
+    { tag: "button", text: { tag: "plain_text", content: "dsh-nano-market" }, url: MARKET_URL, type: "default" },
+  ] });
   elements.push({ tag: "note", elements: [{ tag: "plain_text", content: note }] });
   return { header: { title: { tag: "plain_text", content: title }, template: color }, elements };
 }
@@ -228,7 +227,7 @@ async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promi
   } else {
     lines = url ? ["**访问地址**", url, "---", "**访问密码**", tier] : ["（隧道未运行，暂无访问地址）", "**访问密码**", tier];
   }
-  const card = cardFor(title, color, lines, url, "By oh-summy · dsh-remote · " + new Date().toLocaleString("zh-CN"));
+  const card = cardFor(title, color, lines, url, "dsh-remote By oh-summy · " + new Date().toLocaleString("zh-CN"));
   try {
     if (channel === "group") {
       // 群聊两种发法：优先应用身份（拉过群列表），否则群机器人 webhook
