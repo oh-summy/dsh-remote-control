@@ -73,6 +73,9 @@ const NM_CSS = `
 .nm-chk { font-size: 12.5px; margin-right: 12px; }
 .nm-chk.ok { color: #16a34a; }
 .nm-chk.bad { color: #dc2626; }
+.nm-skel { height: 13px; border-radius: 6px; margin: 16px 0; background: linear-gradient(90deg,#f1f3f5 25%,#e9ecef 50%,#f1f3f5 75%); background-size: 200% 100%; animation: nmsk 1.1s infinite linear; }
+.nm-skel.w60 { width: 60%; }
+@keyframes nmsk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 `;
 
 // 密码显隐 = 小眼睛图标（无文字按钮）
@@ -432,6 +435,7 @@ function mountNanoMarket(container, pm0) {
       const j = await (await fetch(MARKET_INDEX, { signal: AbortSignal.timeout(6000) })).json();
       market = { plugins: j.plugins || [] };
     } catch (e) { market = { error: String(e.message || e) }; }
+    booted = true;
     render();
   }
 
@@ -449,7 +453,8 @@ function mountNanoMarket(container, pm0) {
     if (typeof v === "object") return String(v.zh || v.en || "");
     return String(v);
   }
-  function title(b) { return text(b.meta && b.meta.title) || b.name; }
+  const shortName = (n) => String(n).replace(/^@[^/]+\//, ""); // @oh-summy/dsh-remote → dsh-remote
+  function title(b) { return text(b.meta && b.meta.title) || shortName(b.name); }
 
   function render() {
     if (cleanupRemote) { cleanupRemote(); cleanupRemote = null; }
@@ -457,7 +462,13 @@ function mountNanoMarket(container, pm0) {
     renderList();
   }
 
+  let booted = false; // 首次加载完成前只显示骨架屏，不闪半成品列表（打开瞬间的观感）
+
   function renderList() {
+    if (!booted) {
+      shell.innerHTML = `<div class="nm-card"><div class="nm-skel"></div><div class="nm-skel w60"></div></div><div class="nm-card"><div class="nm-skel"></div><div class="nm-skel w60"></div></div>`;
+      return;
+    }
     // 官方包（@deepseek-ai/*）是 DSH 宿主自己的组成件，不属于市场；本机插件 = 其余 bundles
     const mine = (bundles || []).filter((b) => String(b.name).startsWith("@oh-summy/")); // 只有本项目的插件才进 Nano Market
     const mineRows = mine.map((b) => {
