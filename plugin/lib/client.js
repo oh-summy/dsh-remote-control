@@ -86,6 +86,15 @@ const NM_CSS = `
 const EYE_ON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 const COPY_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+const CHECK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+// 复制反馈：✓ 在按钮本体上闪现（不占独立提示行）
+function flashOk(btn, ms = 1500) {
+  if (!btn) return;
+  const old = btn.innerHTML;
+  btn.innerHTML = `<span style="color:#16a34a;display:inline-flex">${CHECK_SVG}</span>`;
+  btn.title = "已复制";
+  setTimeout(() => { btn.innerHTML = old; btn.title = btn.dataset.title || btn.title; }, ms);
+}
 const INFO_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 // 行内 ⓘ：紧跟标签文字，悬停浮窗说明——页面本体不放说明长文
 function infoTip(text) {
@@ -158,10 +167,10 @@ function renderRemoteDetail(container, initialMsg) {
     if (stopBtn) stopBtn.onclick = () => act("/rc-api/toggle", "正在停止…");
     if (startBtn) startBtn.onclick = () => act("/rc-api/toggle", "正在启动…（新链接几秒后出现）");
     q("#rc-urlrow").innerHTML = st.running && st.url
-      ? `<div class="nm-row nm-row-plain"><a class="nm-link" target="_blank" href="${nmEsc(st.url)}">${nmEsc(st.url)}</a><button class="nm-eye" id="rc-copy" title="复制链接" aria-label="复制链接">${COPY_SVG}</button></div>`
+      ? `<div class="nm-row nm-row-plain"><a class="nm-link" target="_blank" href="${nmEsc(st.url)}">${nmEsc(st.url)}</a>${infoTip("临时隧道免 Cloudflare 账号配置；地址会不定期更换，新地址通过飞书通知自动送达")}<button class="nm-eye" id="rc-copy" title="复制链接" aria-label="复制链接" data-title="复制链接">${COPY_SVG}</button></div>`
       : "";
     const copyBtn = q("#rc-copy");
-    if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText(st.url); setMsg("链接已复制"); };
+    if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText(st.url).then(() => flashOk(copyBtn)).catch(() => setMsg("复制失败：" )); };
     // 密码行只在运行时存在：停止 = 没有链接，密码无从谈起（用户要求）
     const pwrow = q("#rc-pwrow");
     if (st.running) {
@@ -331,7 +340,7 @@ function renderRemoteDetail(container, initialMsg) {
       catch (e) { setMsg("失败：" + e.message); }
     };
     q("#rc-copypw").onclick = async () => {
-      try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); await navigator.clipboard.writeText(r.password); setMsg("密码已复制"); }
+      try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); await navigator.clipboard.writeText(r.password); flashOk(q("#rc-copypw")); }
       catch (e) { setMsg("失败：" + e.message); }
     };
     q("#rc-reset").onclick = () => { if (confirm("重置密码？所有已登录会话将失效，新密码随下次开启通知推送。")) act("/rc-api/reset", "密码已重置"); };
@@ -351,6 +360,8 @@ function renderRemoteDetail(container, initialMsg) {
     q("#rc-env").innerHTML =
       row2("cloudflared", e.cloudflared.found, e.cloudflared.version || e.cloudflared.path) +
       row2("caddy", e.caddy.found, e.caddy.version || e.caddy.path) +
+      row2("Cloudflare 账号", e.cfAccount, "临时隧道免配置，无需注册") +
+      (e.tunnelLink ? row2("隧道链路自检", e.tunnelLink.ok, e.tunnelLink.ok ? "HTTP " + e.tunnelLink.status + "，登录页可达" : String(e.tunnelLink.status)) : "") +
       row2("DSH 会话密钥（远程登录免二次校验）", e.dshSecret, e.dshSecret ? "" : "未读取到");
   }).catch((e) => { q("#rc-env").innerHTML = "环境检查失败：" + nmEsc(e.message); });
 

@@ -209,6 +209,7 @@ async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promi
   const meta: Record<string, [string, string]> = {
     started: ["远程访问已开启", "green"], changed: ["访问地址已变化", "blue"],
     down: ["远程访问已断开", "red"], recovered: ["远程访问已恢复", "green"], test: ["测试通知", "grey"],
+    enabled: ["通知已开启", "green"],
   };
   const [title, color] = meta[event] ?? ["远程访问", "grey"];
   const tier = notifyText(); // 换址必带完整密码：能自救（用户拍板，不做档位）
@@ -216,7 +217,7 @@ async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promi
   let bodyMd = event === "down" || event === "recovered"
     ? (url ? "**最新地址**\n\n" + url : "隧道进程已退出，正在自动恢复。")
     : "**访问地址**\n\n" + url;
-  if (event === "started" || event === "changed") {
+  if (event === "started" || event === "changed" || event === "enabled") {
     bodyMd += "\n\n**访问密码**\n\n" + tier;
   }
   const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + new Date().toLocaleString("zh-CN"));
@@ -494,6 +495,8 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           if (json.webhookUrl) await setSecret(ctx, WEBHOOK_REF, String(json.webhookUrl));
           if (json.appSecret) await setSecret(ctx, APP_SECRET_REF, String(json.appSecret));
           pushEvent("notify", "通知凭据已更新");
+          // webhook 配好的瞬间同样推一条带链接+密码的通知（群聊走机器人时这是唯一的"配好了"信号）
+          if (json.webhookUrl && (cfg.notifyChannel || "off") === "group" && currentUrl) void sendNotify(ctx, "enabled", currentUrl);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
           return;
@@ -552,6 +555,12 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           cfg = { ...cfg, ...fields } as Config;
           saveSettings();
           pushEvent("config", "设置已保存（立即生效）");
+          // 通知配置一旦齐备：立即推一条带链接+密码的消息（闭环确认 + 把当前入口送达）
+          const becameReady =
+            (fields.notifyChannel && fields.notifyChannel !== "off") ||
+            fields.notifyChatId ||
+            fields.notifyOpenId;
+          if (becameReady && (cfg.notifyChannel || "off") !== "off" && currentUrl) void sendNotify(ctx, "enabled", currentUrl);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
           return;
@@ -573,6 +582,14 @@ function startLoginServer(ctx: AnyCtx): http.Server {
             out[name] = { found, path: p, version };
           }
           out.dshSecret = !!dshSessionSecret;
+          out.cfAccount = true; // quick tunnel 免账号：无需任何 Cloudflare 配置（固定域名才需要账号，暂不支持）
+          // 隧道链路自检：运行中时从公网侧把当前链接拉一遍，登录页可达 = 全链路通
+          if (currentUrl) {
+            try {
+              const r = await fetch(currentUrl, { redirect: "manual", signal: AbortSignal.timeout(8000) });
+              out.tunnelLink = { ok: r.status > 0 && r.status < 500, status: r.status };
+            } catch (e) { out.tunnelLink = { ok: false, status: String((e as Error).message).slice(0, 60) }; }
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(out));
           return;

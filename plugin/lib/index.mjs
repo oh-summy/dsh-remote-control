@@ -220,11 +220,12 @@ async function sendNotify(ctx, event, url) {
 		changed: ["访问地址已变化", "blue"],
 		down: ["远程访问已断开", "red"],
 		recovered: ["远程访问已恢复", "green"],
-		test: ["测试通知", "grey"]
+		test: ["测试通知", "grey"],
+		enabled: ["通知已开启", "green"]
 	}[event] ?? ["远程访问", "grey"];
 	const tier = notifyText();
 	let bodyMd = event === "down" || event === "recovered" ? url ? "**最新地址**\n\n" + url : "隧道进程已退出，正在自动恢复。" : "**访问地址**\n\n" + url;
-	if (event === "started" || event === "changed") bodyMd += "\n\n**访问密码**\n\n" + tier;
+	if (event === "started" || event === "changed" || event === "enabled") bodyMd += "\n\n**访问密码**\n\n" + tier;
 	const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
 	try {
 		if (channel === "group") {
@@ -533,6 +534,7 @@ function startLoginServer(ctx) {
 					if (json.webhookUrl) await setSecret(ctx, WEBHOOK_REF, String(json.webhookUrl));
 					if (json.appSecret) await setSecret(ctx, APP_SECRET_REF, String(json.appSecret));
 					pushEvent("notify", "通知凭据已更新");
+					if (json.webhookUrl && (cfg.notifyChannel || "off") === "group" && currentUrl) sendNotify(ctx, "enabled", currentUrl);
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify({ ok: true }));
 					return;
@@ -606,6 +608,7 @@ function startLoginServer(ctx) {
 					};
 					saveSettings();
 					pushEvent("config", "设置已保存（立即生效）");
+					if ((fields.notifyChannel && fields.notifyChannel !== "off" || fields.notifyChatId || fields.notifyOpenId) && (cfg.notifyChannel || "off") !== "off" && currentUrl) sendNotify(ctx, "enabled", currentUrl);
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify({ ok: true }));
 					return;
@@ -628,6 +631,22 @@ function startLoginServer(ctx) {
 						};
 					}
 					out.dshSecret = !!dshSessionSecret;
+					out.cfAccount = true;
+					if (currentUrl) try {
+						const r = await fetch(currentUrl, {
+							redirect: "manual",
+							signal: AbortSignal.timeout(8e3)
+						});
+						out.tunnelLink = {
+							ok: r.status > 0 && r.status < 500,
+							status: r.status
+						};
+					} catch (e) {
+						out.tunnelLink = {
+							ok: false,
+							status: String(e.message).slice(0, 60)
+						};
+					}
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify(out));
 					return;
