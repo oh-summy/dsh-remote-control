@@ -542,8 +542,8 @@ function renderCaddyfile(): string {
 	}
 
 	handle @api {
-		// 远端 /rc-api 的授权在插件侧 classify（cf-connecting-ip 存在=远端 → rc_session 校验）；
-		// cloudflared→Caddy 的 remote_ip 恒为 127.0.0.1，@localapi 恒先命中——内层不再分支。
+		# 远端 /rc-api 的授权在插件侧 classify（cf-connecting-ip 存在=远端 → rc_session 校验）；
+		# cloudflared→Caddy 的 remote_ip 恒为 127.0.0.1，@localapi 恒先命中——内层不再分支。
 		handle @localapi {
 			reverse_proxy 127.0.0.1:${LOGIN_PORT}
 		}
