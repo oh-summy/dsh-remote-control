@@ -1,0 +1,45 @@
+{
+  "name": "@oh-summy/dsh-remote",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Remote access for DSH via a Cloudflare quick tunnel with a password gate. M2+M3: gate, login page, notify, client page.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.mjs",
+  "exports": {
+    ".": "./lib/index.mjs",
+    "./client": "./lib/client.js"
+  },
+  "engines": {
+    "node": ">=24",
+    "dsh": ">=0.2.1-rc.2 || >=0.2.2-0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "remote",
+    "tunnel",
+    "cloudflare"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit && tsdown src/index.ts -d lib --format esm && node scripts/build-client.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsdown": "^0.23.2",
+    "typescript": "^7.0.2"
+  }
+}

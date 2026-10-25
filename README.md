@@ -176,6 +176,19 @@ Or run `dsh-web tunnel-setup` for a guided setup.
 
 For system architecture, design decisions, and component interaction, see [docs/architecture.md](docs/architecture.md).
 
+## DSH plugin — `@oh-summy/dsh-remote`
+
+This repo also ships the same capability as a native DSH plugin (`plugin/`): enable it from DSH's own UI —
+Settings → Built-in plugins → 远程访问 — and get a Cloudflare quick-tunnel link + password gate without touching a terminal.
+Design and hard-won implementation facts: [docs/dsh-plugin-design.md](docs/dsh-plugin-design.md).
+
+- Install (into a DSH profile): `dsh plugin --profile web add @oh-summy/dsh-remote` (published to the market at tag `v0.4.0`).
+- The plugin supersedes the script gateway's watchdog/auth layers: it runs inside the DSH host, manages `cloudflared` + `caddy`
+  itself, and registers the login page as its own listener. Enable one or the other, not both (the plugin fails loud if
+  port 4080 is taken by the script gateway: `dsh-web stop` first).
+- Notification credentials never land in configuration files — they go through DSH's credential seam
+  (`~/.dsh/.credentials.yaml`), and the page shows masked values only.
+
 ## Roadmap
 
 For milestone progress and what's next, see [docs/roadmap.md](docs/roadmap.md).

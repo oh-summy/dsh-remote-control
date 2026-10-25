@@ -1,0 +1,9 @@
+# bundle layer for @oh-summy/dsh-remote: applied automatically when the bundle
+# is listed in a profile's dsh.profile.bundles. enabled=false keeps it idle;
+# flip to true (then restart the host — see design doc fact 20) to start the tunnel.
+- insert:
+    - id: dsh-remote
+      name: "@oh-summy/dsh-remote"
+      config:
+        enabled: false
+        # cloudflaredPath: /full/path/to/cloudflared   # optional; defaults probe ~/.remote-control/bin then PATH
