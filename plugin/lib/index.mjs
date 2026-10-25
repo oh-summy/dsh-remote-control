@@ -121,25 +121,39 @@ const revealAt = /* @__PURE__ */ new Map();
 function notifyText() {
 	return password;
 }
-function cardFor(title, color, bodyMd, url, note) {
-	const elements = [{
+const MARKET_URL = "https://github.com/oh-summy/dsh-nano-market";
+function cardFor(title, color, lines, url, note) {
+	const elements = [];
+	for (const line of lines) if (line === "---") elements.push({ tag: "hr" });
+	else elements.push({
 		tag: "div",
 		text: {
 			tag: "lark_md",
-			content: bodyMd
+			content: line
 		}
-	}];
-	if (url) elements.push({
+	});
+	const actions = [];
+	if (url) actions.push({
+		tag: "button",
+		text: {
+			tag: "plain_text",
+			content: "打开 DSH"
+		},
+		url,
+		type: "primary"
+	});
+	actions.push({
+		tag: "button",
+		text: {
+			tag: "plain_text",
+			content: "oh-summy 市场"
+		},
+		url: MARKET_URL,
+		type: "default"
+	});
+	elements.push({
 		tag: "action",
-		actions: [{
-			tag: "button",
-			text: {
-				tag: "plain_text",
-				content: "打开 DSH"
-			},
-			url,
-			type: "primary"
-		}]
+		actions
 	});
 	elements.push({
 		tag: "note",
@@ -224,9 +238,20 @@ async function sendNotify(ctx, event, url) {
 		enabled: ["通知已开启", "green"]
 	}[event] ?? ["远程访问", "grey"];
 	const tier = notifyText();
-	let bodyMd = event === "down" || event === "recovered" ? url ? "**最新地址**\n\n" + url : "隧道进程已退出，正在自动恢复。" : "**访问地址**\n\n" + url;
-	if (event === "started" || event === "changed" || event === "enabled") bodyMd += "\n\n**访问密码**\n\n" + tier;
-	const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
+	let lines;
+	if (event === "down" || event === "recovered") lines = url ? ["**最新地址**", url] : ["隧道进程已退出，正在自动恢复。"];
+	else lines = url ? [
+		"**访问地址**",
+		url,
+		"---",
+		"**访问密码**",
+		tier
+	] : [
+		"（隧道未运行，暂无访问地址）",
+		"**访问密码**",
+		tier
+	];
+	const card = cardFor(title, color, lines, url, "By oh-summy · dsh-remote · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
 	try {
 		if (channel === "group") {
 			const hook = await getSecret(WEBHOOK_REF);
@@ -534,7 +559,10 @@ function startLoginServer(ctx) {
 					if (json.webhookUrl) await setSecret(ctx, WEBHOOK_REF, String(json.webhookUrl));
 					if (json.appSecret) await setSecret(ctx, APP_SECRET_REF, String(json.appSecret));
 					pushEvent("notify", "通知凭据已更新");
-					if (json.webhookUrl && (cfg.notifyChannel || "off") === "group" && currentUrl) sendNotify(ctx, "enabled", currentUrl);
+					if (currentUrl) {
+						const ch = cfg.notifyChannel || "off";
+						if (ch === "dm" ? !!cfg.notifyOpenId : ch === "group" ? !!cfg.notifyChatId || !!await getSecret(WEBHOOK_REF) : false) sendNotify(ctx, "enabled", currentUrl);
+					}
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify({ ok: true }));
 					return;

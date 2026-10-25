@@ -299,7 +299,15 @@ function renderRemoteDetail(container, initialMsg) {
     const appId = form.querySelector("#rc-appid");
     const sec = form.querySelector("#rc-sec");
     bindMasked(appId, st.appIdMask, (v) => act("/rc-api/config", "App ID 已保存", { notifyAppId: v }));
-    sec.onchange = () => { const v = sec.value.trim(); if (v) act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: v }); sec.value = ""; };
+    sec.onchange = () => {
+      const v = sec.value.trim();
+      if (v) {
+        act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: v });
+        // 立即用刚存的值显示掩码占位（不等表单重建）
+        sec.placeholder = "已配置 " + v.slice(0, 4) + "••••••，输入新值覆盖";
+      }
+      sec.value = "";
+    };
     const rc = form.querySelector("#rc-recheck");
     if (rc) rc.onclick = () => runAppCheck();
     if (st.appIdMask && st.hasAppSecret) runAppCheck(); // 凭据齐了就自动体检

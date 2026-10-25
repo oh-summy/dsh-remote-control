@@ -149,12 +149,20 @@ function notifyText(): string {
 
 // ---------- notify ----------
 
-function cardFor(title: string, color: string, bodyMd: string, url: string | null, note: string) {
-  const elements: any[] = [{ tag: "div", text: { tag: "lark_md", content: bodyMd } }];
-  if (url) elements.push({
-    tag: "action",
-    actions: [{ tag: "button", text: { tag: "plain_text", content: "打开 DSH" }, url, type: "primary" }],
-  });
+// 卡片结构为「复制友好」设计：标签行 / 内容行各自独立 div 区块，区块间天然留白；
+// "---" 渲染为分隔线；操作按钮含市场仓库入口；落款 By oh-summy
+const MARKET_URL = "https://github.com/oh-summy/dsh-nano-market";
+
+function cardFor(title: string, color: string, lines: string[], url: string | null, note: string) {
+  const elements: any[] = [];
+  for (const line of lines) {
+    if (line === "---") elements.push({ tag: "hr" });
+    else elements.push({ tag: "div", text: { tag: "lark_md", content: line } });
+  }
+  const actions: any[] = [];
+  if (url) actions.push({ tag: "button", text: { tag: "plain_text", content: "打开 DSH" }, url, type: "primary" });
+  actions.push({ tag: "button", text: { tag: "plain_text", content: "oh-summy 市场" }, url: MARKET_URL, type: "default" });
+  elements.push({ tag: "action", actions });
   elements.push({ tag: "note", elements: [{ tag: "plain_text", content: note }] });
   return { header: { title: { tag: "plain_text", content: title }, template: color }, elements };
 }
@@ -213,14 +221,14 @@ async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promi
   };
   const [title, color] = meta[event] ?? ["远程访问", "grey"];
   const tier = notifyText(); // 换址必带完整密码：能自救（用户拍板，不做档位）
-  // 布局为「方便复制」设计：URL 与密码各占独立一行，前后空行——点按即选中整行，不会带标签
-  let bodyMd = event === "down" || event === "recovered"
-    ? (url ? "**最新地址**\n\n" + url : "隧道进程已退出，正在自动恢复。")
-    : "**访问地址**\n\n" + url;
-  if (event === "started" || event === "changed" || event === "enabled") {
-    bodyMd += "\n\n**访问密码**\n\n" + tier;
+  // 独立区块 + 分隔线：地址和密码各自前后留白，点按选中整行不带标签（测试通知同样带密码，按主人要求）
+  let lines: string[];
+  if (event === "down" || event === "recovered") {
+    lines = url ? ["**最新地址**", url] : ["隧道进程已退出，正在自动恢复。"];
+  } else {
+    lines = url ? ["**访问地址**", url, "---", "**访问密码**", tier] : ["（隧道未运行，暂无访问地址）", "**访问密码**", tier];
   }
-  const card = cardFor(title, color, bodyMd, url, "dsh-remote · " + new Date().toLocaleString("zh-CN"));
+  const card = cardFor(title, color, lines, url, "By oh-summy · dsh-remote · " + new Date().toLocaleString("zh-CN"));
   try {
     if (channel === "group") {
       // 群聊两种发法：优先应用身份（拉过群列表），否则群机器人 webhook
@@ -495,8 +503,14 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           if (json.webhookUrl) await setSecret(ctx, WEBHOOK_REF, String(json.webhookUrl));
           if (json.appSecret) await setSecret(ctx, APP_SECRET_REF, String(json.appSecret));
           pushEvent("notify", "通知凭据已更新");
-          // webhook 配好的瞬间同样推一条带链接+密码的通知（群聊走机器人时这是唯一的"配好了"信号）
-          if (json.webhookUrl && (cfg.notifyChannel || "off") === "group" && currentUrl) void sendNotify(ctx, "enabled", currentUrl);
+          // 凭据补齐使配置变完整的瞬间：立即推一条带链接+密码的通知（App Secret 常常是最后一块拼图）
+          if (currentUrl) {
+            const ch = cfg.notifyChannel || "off";
+            const ready = ch === "dm" ? !!cfg.notifyOpenId
+              : ch === "group" ? (!!cfg.notifyChatId || !!(await getSecret(WEBHOOK_REF)))
+              : false;
+            if (ready) void sendNotify(ctx, "enabled", currentUrl);
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
           return;
