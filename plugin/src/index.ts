@@ -162,8 +162,7 @@ function cardFor(title: string, color: string, lines: string[], url: string | nu
   elements.push({ tag: "action", actions: [
     { tag: "button", text: { tag: "plain_text", content: "dsh-nano-market" }, url: MARKET_URL, type: "default" },
   ] });
-  // 落款用 lark_md 区块而非 note：note 不支持链接，oh-summy 要可点
-  elements.push({ tag: "div", text: { tag: "lark_md", content: note } });
+  elements.push({ tag: "note", elements: [{ tag: "plain_text", content: note }] });
   return { header: { title: { tag: "plain_text", content: title }, template: color }, elements };
 }
 
@@ -228,7 +227,7 @@ async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promi
   } else {
     lines = url ? ["**访问地址**", url, "---", "**访问密码**", tier] : ["（隧道未运行，暂无访问地址）", "**访问密码**", tier];
   }
-  const card = cardFor(title, color, lines, url, "dsh-remote By [oh-summy](https://github.com/oh-summy) · " + new Date().toLocaleString("zh-CN"));
+  const card = cardFor(title, color, lines, url, "dsh-remote By oh-summy · " + new Date().toLocaleString("zh-CN"));
   try {
     if (channel === "group") {
       // 群聊两种发法：优先应用身份（拉过群列表），否则群机器人 webhook
