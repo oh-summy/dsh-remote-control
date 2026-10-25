@@ -427,6 +427,21 @@ function startLoginServer(ctx) {
 					res.end(JSON.stringify({ ok: true }));
 					return;
 				}
+				if (req.method === "POST" && path === "/rc-api/toggle") {
+					const target = !cfg.enabled;
+					try {
+						ensureUserOverride(target);
+						res.writeHead(200, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({
+							ok: true,
+							enabled: target
+						}));
+					} catch (e) {
+						res.writeHead(500, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: e.message }));
+					}
+					return;
+				}
 				if (req.method === "POST" && path === "/rc-api/test") {
 					if ((cfg.notifyChannel || "off") === "off") {
 						res.writeHead(400, { "Content-Type": "application/json" });
@@ -497,6 +512,15 @@ function readPid(name) {
 		return 0;
 	}
 }
+const PROFILE_PATCH = join(homedir(), ".dsh", "profiles", "web", "cordis.patch.yml");
+function ensureUserOverride(enabled) {
+	let s = readFileSync(PROFILE_PATCH, "utf8");
+	const backup = s + `\n# (dsh-remote toggle backup ${Date.now()})\n`;
+	writeFileSync(PROFILE_PATCH + ".bak-dsh-remote", backup);
+	if (/- id: dsh-remote[\s\S]{0,240}?enabled:\s*(true|false)/.test(s)) s = s.replace(/(- id: dsh-remote[\s\S]{0,240}?enabled:\s*)(true|false)/, `$1${enabled}`);
+	else s = s.replace(/\s*$/, "") + `\n- id: dsh-remote\n  config:\n    enabled: ${enabled}\n`;
+	writeFileSync(PROFILE_PATCH, s);
+}
 async function reapOrphans(ctx) {
 	for (const name of ["caddy", "cloudflared"]) {
 		const pid = readPid(name);
@@ -510,7 +534,7 @@ async function reapOrphans(ctx) {
 		}
 	}
 	if (!await waitPortFree(GATE_PORT)) throw new Error(`端口 ${GATE_PORT} 被非本插件进程占用（可能 v0.3.x 网关在跑：先 dsh-web stop）— fail loud，不抢端口`);
-	if (await portBusy(LOGIN_PORT)) throw new Error(`端口 ${LOGIN_PORT} 被占用（可能 v0.3.x auth-server 在跑）— fail loud`);
+	await waitPortFree(LOGIN_PORT);
 }
 function spawnCaddy(ctx, isAlive) {
 	const caddyfile = join(RUN_DIR, "Caddyfile");
@@ -664,21 +688,25 @@ function renderCaddyfile() {
 function apply(ctx, config = {}) {
 	globalThis.__dshRemoteCtx = ctx;
 	cfg = config;
-	if (!config.enabled) return;
 	mkdirSync(RUN_DIR, { recursive: true });
 	ctx.effect(() => {
 		let dead = false;
 		const isAlive = () => !dead;
 		const boot = async () => {
-			await reapOrphans(ctx);
-			if (!isAlive()) return;
 			await ensureSecrets(ctx);
 			if (!isAlive()) return;
 			loginServer = startLoginServer(ctx);
-			await new Promise((resolve, reject) => {
-				loginServer.once("error", reject);
-				loginServer.listen(LOGIN_PORT, "127.0.0.1", () => resolve());
-			});
+			for (let attempt = 0;; attempt++) try {
+				await new Promise((resolve, reject) => {
+					loginServer.once("error", reject);
+					loginServer.listen(LOGIN_PORT, "127.0.0.1", () => resolve());
+				});
+				break;
+			} catch (e) {
+				if (attempt >= 5 || !isAlive() || String(e.message).indexOf("EADDRINUSE") < 0) throw e;
+				say(ctx, "warn", "[dsh-remote] 9091 暂被上一代 fiber 占用，500ms 后重试");
+				await new Promise((r) => setTimeout(r, 500));
+			}
 			if (!isAlive()) {
 				try {
 					loginServer.close();
@@ -687,6 +715,9 @@ function apply(ctx, config = {}) {
 				return;
 			}
 			say(ctx, "info", `[dsh-remote] login/api listening on 127.0.0.1:${LOGIN_PORT}`);
+			if (!cfg.enabled) return;
+			await reapOrphans(ctx);
+			if (!isAlive()) return;
 			spawnCaddy(ctx, isAlive);
 			spawnCloudflared(ctx, isAlive);
 		};

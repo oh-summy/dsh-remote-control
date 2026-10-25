@@ -17,7 +17,7 @@ function App() {
   const [msg, setMsg] = useState("");
   const [shownPassword, setShownPassword] = useState(null);
 
-  const refresh = () => api("/rc-api/state").then(setState).catch(() => setMsg("插件未启用：点右上角 Open configuration file，把本插件的 enabled 改为 true（改动会产生新链接）"));
+  const refresh = () => api("/rc-api/state").then(setState).catch((e) => setMsg("管理面未就绪：" + e.message));
   useEffect(() => { refresh(); const t = setInterval(refresh, 5000); return () => clearInterval(t); }, []);
 
   const act = (path, body, done) => {
@@ -38,6 +38,9 @@ function App() {
     h("h3", { style: styles.h }, "远程访问（Cloudflare 临时链接）"),
     h("div", { style: styles.row },
       h("span", { style: state.running ? styles.on : styles.off }, state.running ? "● 运行中" : "○ 已停止"),
+      h("button", { style: state.running ? styles.btnWarn : styles.btn, onClick: () => act("/rc-api/toggle", null, state.running ? "正在停止…" : "正在启动…（新链接几秒后出现）") },
+        state.running ? "停止远程访问" : "启动远程访问")),
+    h("div", { style: styles.row },
       state.url && h("a", { href: state.url, target: "_blank", style: styles.link }, state.url),
       state.url && h("button", { style: styles.btn, onClick: () => copy(state.url) }, "复制链接")),
     h("div", { style: styles.row },
@@ -85,15 +88,16 @@ const styles = {
   event: { whiteSpace: "pre-wrap", wordBreak: "break-all" },
 };
 
-// host-side mount: register the page as a tab in Settings → Built-in plugins
+// host-side mounts: the page appears BOTH on the sidebar Plugins page (plugins.item,
+// rendered inside this plugin's detail view) and in Settings → Built-in plugins.
 const inject = ["slots"];
 
 function apply(ctx) {
   if (!ctx.slots) return;
-  ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({
-    name: "settings.plugins.tab",
-    id: "dsh-remote",
-    order: 99,
-    label: () => "远程访问",
-  }, App));
+  const register = () => {
+    ctx.slots.register({ name: "settings.plugins.tab", id: "dsh-remote", order: 99, label: () => "远程访问" }, App);
+    ctx.slots.register({ name: "plugins.item", id: "dsh-remote", order: 99, label: () => "远程访问" }, App);
+  };
+  ctx.slots.inject("settings.plugins.tab", register);
+  ctx.slots.inject("plugins.item", register);
 }

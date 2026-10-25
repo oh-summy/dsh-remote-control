@@ -384,6 +384,19 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           res.end(JSON.stringify({ ok: true }));
           return;
         }
+        if (req.method === "POST" && path === "/rc-api/toggle") {
+          // 一键启停：改 profile 配置层（HMR 监视的文件）的 enabled，条目自动重启
+          const target = !cfg.enabled;
+          try {
+            ensureUserOverride(target);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true, enabled: target }));
+          } catch (e) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: (e as Error).message }));
+          }
+          return;
+        }
         if (req.method === "POST" && path === "/rc-api/test") {
           const channel = cfg.notifyChannel || "off";
           if (channel === "off") { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "通知通道未启用（设置表单里选 webhook 或 app）" })); return; }
@@ -437,6 +450,30 @@ function readPid(name: string): number {
   try { return Number(readFileSync(join(RUN_DIR, name + ".pid"), "utf8").trim()); } catch { return 0; }
 }
 
+// 用户层的 enabled 开关（profile patch 是 HMR 监视的文件，改完条目自动重启）。
+// bundle 层保持 enabled:false 的安全默认；用户的选择记录在用户层，跨重启持久。
+const PROFILE_PATCH = join(homedir(), ".dsh", "profiles", "web", "cordis.patch.yml");
+
+function currentUserOverride(): boolean | null {
+  try {
+    const s = readFileSync(PROFILE_PATCH, "utf8");
+    const m = /- id: dsh-remote[\s\S]{0,240}?enabled:\s*(true|false)/.exec(s);
+    return m ? m[1] === "true" : null;
+  } catch { return null; }
+}
+
+function ensureUserOverride(enabled: boolean): void {
+  let s = readFileSync(PROFILE_PATCH, "utf8");
+  const backup = s + `\n# (dsh-remote toggle backup ${Date.now()})\n`;
+  writeFileSync(PROFILE_PATCH + ".bak-dsh-remote", backup);
+  if (/- id: dsh-remote[\s\S]{0,240}?enabled:\s*(true|false)/.test(s)) {
+    s = s.replace(/(- id: dsh-remote[\s\S]{0,240}?enabled:\s*)(true|false)/, `$1${enabled}`);
+  } else {
+    s = s.replace(/\s*$/, "") + `\n- id: dsh-remote\n  config:\n    enabled: ${enabled}\n`;
+  }
+  writeFileSync(PROFILE_PATCH, s);
+}
+
 async function reapOrphans(ctx: AnyCtx): Promise<void> {
   for (const name of ["caddy", "cloudflared"]) {
     const pid = readPid(name);
@@ -449,9 +486,8 @@ async function reapOrphans(ctx: AnyCtx): Promise<void> {
   if (!(await waitPortFree(GATE_PORT))) {
     throw new Error(`端口 ${GATE_PORT} 被非本插件进程占用（可能 v0.3.x 网关在跑：先 dsh-web stop）— fail loud，不抢端口`);
   }
-  if (await portBusy(LOGIN_PORT)) {
-    throw new Error(`端口 ${LOGIN_PORT} 被占用（可能 v0.3.x auth-server 在跑）— fail loud`);
-  }
+  // 9091 是本插件专属：启动期上一代 fiber 释放有延迟，等待即可（listen 自带重试）
+  await waitPortFree(LOGIN_PORT);
 }
 
 function spawnCaddy(ctx: AnyCtx, isAlive: () => boolean): void {
@@ -580,29 +616,39 @@ function renderCaddyfile(): string {
 export function apply(ctx: AnyCtx, config: Config = {}) {
   (globalThis as any).__dshRemoteCtx = ctx; // secrets helpers need ctx without threading it everywhere
   cfg = config;
-  if (!config.enabled) return; // idle
-
   mkdirSync(RUN_DIR, { recursive: true });
 
   // 生命周期整体挂 ctx.effect（事实 14）：setup 现在跑，disposer 在 fiber 销毁时跑。
   // dead/isAlive 是本条 fiber 的生命旗标——所有异步路径（boot 的 await 间隙、respawn 定时器）
   // 都必须检查，否则 fiber 销毁后仍会拉起进程（第 1 轮自审 P1-2 的根因）。
+  // 管理 listener（登录页 + /rc-api）常驻：不随隧道启停——否则停止后连"启动按钮"都没有。
   ctx.effect(() => {
     let dead = false;
     const isAlive = () => !dead;
 
     const boot = async () => {
-      await reapOrphans(ctx);
-      if (!isAlive()) return;
       await ensureSecrets(ctx);
       if (!isAlive()) return;
       loginServer = startLoginServer(ctx);
-      await new Promise<void>((resolve, reject) => {
-        loginServer!.once("error", reject);
-        loginServer!.listen(LOGIN_PORT, "127.0.0.1", () => resolve());
-      });
+      // 启动期 entry 重启竞态：上一代 fiber 的 listener 释放有延迟，重试而不是失败
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            loginServer!.once("error", reject);
+            loginServer!.listen(LOGIN_PORT, "127.0.0.1", () => resolve());
+          });
+          break;
+        } catch (e) {
+          if (attempt >= 5 || !isAlive() || String((e as Error).message).indexOf("EADDRINUSE") < 0) throw e;
+          say(ctx, "warn", "[dsh-remote] 9091 暂被上一代 fiber 占用，500ms 后重试");
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
       if (!isAlive()) { try { loginServer!.close(); } catch { /* not listening */ } loginServer = null; return; }
       say(ctx, "info", `[dsh-remote] login/api listening on 127.0.0.1:${LOGIN_PORT}`);
+      if (!cfg.enabled) return; // idle：管理面在，隧道不在
+      await reapOrphans(ctx);
+      if (!isAlive()) return;
       spawnCaddy(ctx, isAlive);
       spawnCloudflared(ctx, isAlive);
     };
