@@ -419,6 +419,9 @@ function startLoginServer(ctx: AnyCtx): http.Server {
         if (!authed) { res.writeHead(401); res.end("unauthorized"); return; }
 
         if (req.method === "GET" && path === "/rc-api/state") {
+          const appSecret = await getSecret(APP_SECRET_REF);
+          // 掩码只到前几位：页面能看出"已配置"，但完整身份串不出管理面
+          const mask = (v: unknown, n: number) => (v ? String(v).slice(0, n) + "••••••" : "");
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
             running: !!cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid),
@@ -428,13 +431,41 @@ function startLoginServer(ctx: AnyCtx): http.Server {
             sessionDays: Number(cfg.sessionDays) || 7,
             channel: cfg.notifyChannel || "off",
             hasWebhook: !!(await getSecret(WEBHOOK_REF)),
-            hasAppSecret: !!(await getSecret(APP_SECRET_REF)),
-            openId: cfg.notifyOpenId || "",
+            hasAppSecret: !!appSecret,
+            appIdMask: mask(cfg.notifyAppId, 6),
+            openIdMask: mask(cfg.notifyOpenId, 6),
+            appSecretMask: mask(appSecret, 4),
             chatId: cfg.notifyChatId || "",
             chatName: cfg.notifyChatName || "",
-            appId: cfg.notifyAppId || "",
             events,
           }));
+          return;
+        }
+        if (req.method === "GET" && path === "/rc-api/appcheck") {
+          // 配置体检：token 有效性 + im:message（发消息，私聊/群聊都要）+ im:chat（拉群列表，群聊要）。
+          // im:message 用全零 receive_id 探测：有权限 → 返回「receive_id 无效」类业务错误；无权限 → 权限错误码。不实际投递。
+          const out: Record<string, unknown> = { token: false, imMessage: null, imChat: null, error: "" };
+          try {
+            const token = await getTenantToken();
+            out.token = true;
+            try {
+              const r = await fetch("https://open.feishu.cn/open-apis/im/v1/chats?page_size=1", { headers: { Authorization: "Bearer " + token }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+              out.imChat = ((await r.json()) as any).code === 0;
+            } catch { /* 网络问题保持 null */ }
+            try {
+              const r = await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+                body: JSON.stringify({ receive_id: "ou_0000000000000000000000000000", msg_type: "text", content: "{\"text\":\"x\"}" }),
+                signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+              });
+              const j = (await r.json()) as any;
+              const denied = j.code === 99991672 || j.code === 99991661 || /scope|权限/.test(String(j.msg || ""));
+              out.imMessage = !denied;
+            } catch { /* 保持 null */ }
+          } catch (e) { out.error = (e as Error).message; }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(out));
           return;
         }
         if (req.method === "POST" && path === "/rc-api/reveal") {

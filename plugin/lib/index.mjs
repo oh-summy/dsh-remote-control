@@ -445,6 +445,8 @@ function startLoginServer(ctx) {
 					return;
 				}
 				if (req.method === "GET" && path === "/rc-api/state") {
+					const appSecret = await getSecret(APP_SECRET_REF);
+					const mask = (v, n) => v ? String(v).slice(0, n) + "••••••" : "";
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify({
 						running: !!cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid),
@@ -454,13 +456,53 @@ function startLoginServer(ctx) {
 						sessionDays: Number(cfg.sessionDays) || 7,
 						channel: cfg.notifyChannel || "off",
 						hasWebhook: !!await getSecret(WEBHOOK_REF),
-						hasAppSecret: !!await getSecret(APP_SECRET_REF),
-						openId: cfg.notifyOpenId || "",
+						hasAppSecret: !!appSecret,
+						appIdMask: mask(cfg.notifyAppId, 6),
+						openIdMask: mask(cfg.notifyOpenId, 6),
+						appSecretMask: mask(appSecret, 4),
 						chatId: cfg.notifyChatId || "",
 						chatName: cfg.notifyChatName || "",
-						appId: cfg.notifyAppId || "",
 						events
 					}));
+					return;
+				}
+				if (req.method === "GET" && path === "/rc-api/appcheck") {
+					const out = {
+						token: false,
+						imMessage: null,
+						imChat: null,
+						error: ""
+					};
+					try {
+						const token = await getTenantToken();
+						out.token = true;
+						try {
+							out.imChat = (await (await fetch("https://open.feishu.cn/open-apis/im/v1/chats?page_size=1", {
+								headers: { Authorization: "Bearer " + token },
+								signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+							})).json()).code === 0;
+						} catch {}
+						try {
+							const j = await (await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
+								method: "POST",
+								headers: {
+									"Content-Type": "application/json",
+									Authorization: "Bearer " + token
+								},
+								body: JSON.stringify({
+									receive_id: "ou_0000000000000000000000000000",
+									msg_type: "text",
+									content: "{\"text\":\"x\"}"
+								}),
+								signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+							})).json();
+							out.imMessage = !(j.code === 99991672 || j.code === 99991661 || /scope|权限/.test(String(j.msg || "")));
+						} catch {}
+					} catch (e) {
+						out.error = e.message;
+					}
+					res.writeHead(200, { "Content-Type": "application/json" });
+					res.end(JSON.stringify(out));
 					return;
 				}
 				if (req.method === "POST" && path === "/rc-api/reveal") {

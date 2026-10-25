@@ -34,47 +34,52 @@ function nmEsc(s) {
 
 const NM_CSS = `
 .nm { font-family: system-ui,-apple-system,sans-serif; color: #1f2328; max-width: 760px; margin: 0 auto; font-size: 14px; }
-.nm-sec { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; margin: 18px 0 8px; }
-.nm-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 4px 14px; margin-bottom: 12px; }
-.nm-bare { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
-.nm-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
-.nm-row:last-child { border-bottom: none; }
+.nm-sec { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: .05em; margin: 22px 0 6px; }
+.nm-card { background: #fff; border: 1px solid #eef0f3; border-radius: 14px; padding: 8px 22px; margin-bottom: 14px; }
+.nm-bare { background: #fff; border: 1px solid #eef0f3; border-radius: 14px; padding: 18px 22px; margin-bottom: 14px; }
+.nm-row { display: flex; align-items: center; gap: 10px; padding: 13px 0; cursor: pointer; }
 .nm-row-plain { cursor: default; }
-.nm-icon { width: 38px; height: 38px; border-radius: 10px; background: #eef2ff; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.nm-icon { width: 38px; height: 38px; border-radius: 10px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
 .nm-name { font-weight: 600; font-size: 14px; }
 .nm-ver { color: #9ca3af; font-size: 12px; margin-left: 6px; font-family: ui-monospace,monospace; }
-.nm-desc { color: #6b7280; font-size: 12.5px; line-height: 1.5; }
+.nm-desc { color: #9ca3af; font-size: 12.5px; line-height: 1.5; }
 .nm-badge { background: #eef2ff; color: #4f46e5; border-radius: 999px; padding: 1px 8px; font-size: 11px; margin-left: 6px; }
-.nm-badge-g { background: #f3f4f6; color: #6b7280; border-radius: 999px; padding: 1px 8px; font-size: 11px; margin-left: 6px; }
-.nm-label { min-width: 84px; color: #6b7280; font-size: 13px; flex-shrink: 0; }
+.nm-badge-g { background: #f3f4f6; color: #9ca3af; border-radius: 999px; padding: 1px 8px; font-size: 11px; margin-left: 6px; }
+.nm-label { min-width: 96px; color: #6b7280; font-size: 13px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; }
 .nm-dot-on { color: #16a34a; font-weight: 600; font-size: 13px; }
 .nm-dot-off { color: #9ca3af; font-weight: 600; font-size: 13px; }
 .nm-link { color: #2563eb; word-break: break-all; text-decoration: none; }
-.nm-code { background: #f3f4f6; border-radius: 6px; padding: 3px 10px; font-family: ui-monospace,monospace; font-size: 13px; }
-.nm-btn { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: #1f2328; }
-.nm-btn-p { background: #2563eb; border: 1px solid #2563eb; border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: #fff; }
-.nm-btn-d { background: #fff; border: 1px solid #fca5a5; border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: #dc2626; }
-.nm-input { flex: 1; min-width: 220px; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 10px; font-size: 13px; box-sizing: border-box; }
-.nm-note { color: #9ca3af; font-size: 12px; line-height: 1.7; margin: 10px 0 0; }
-.nm-msg { color: #2563eb; font-size: 13px; margin: 6px 0; min-height: 18px; }
-.nm-events { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; max-height: 200px; overflow: auto; font-size: 12px; color: #6b7280; }
-.nm-event { padding: 2px 0; word-break: break-all; border-bottom: 1px solid #f3f4f6; }
-.nm-empty { color: #9ca3af; font-size: 13px; padding: 16px 0; text-align: center; }
-.nm-sw { width: 40px; height: 22px; border-radius: 999px; background: #1f2328; position: relative; cursor: pointer; flex-shrink: 0; border: none; }
-.nm-sw.off { background: #d1d5db; }
-.nm-sw i { position: absolute; top: 2px; left: 20px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.nm-code { background: #f6f7f9; border-radius: 6px; padding: 3px 10px; font-family: ui-monospace,monospace; font-size: 13px; }
+.nm-btn { background: transparent; border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 13px; font-size: 13px; cursor: pointer; color: #4b5563; }
+.nm-btn:hover { border-color: #d1d5db; background: #fafbfc; }
+.nm-btn-p { background: #2563eb; border: 1px solid #2563eb; border-radius: 8px; padding: 5px 13px; font-size: 13px; cursor: pointer; color: #fff; }
+.nm-btn-d { background: transparent; border: 1px solid #f3d4d4; border-radius: 8px; padding: 5px 13px; font-size: 13px; cursor: pointer; color: #dc2626; }
+.nm-btn-d:hover { background: #fdf5f5; }
+.nm-input { flex: 1; min-width: 220px; border: 1px solid #e8eaed; border-radius: 8px; padding: 6px 10px; font-size: 13px; box-sizing: border-box; background: #fafbfc; color: #4b5563; }
+.nm-input:focus { background: #fff; outline: none; border-color: #bfdbfe; }
+.nm-note { color: #9ca3af; font-size: 12px; line-height: 1.7; margin: 8px 0 0; }
+.nm-msg { color: #2563eb; font-size: 13px; margin: 4px 0 0; min-height: 18px; }
+.nm-events { border: 1px solid #eef0f3; border-radius: 10px; padding: 10px 12px; max-height: 200px; overflow: auto; font-size: 12px; color: #9ca3af; background: #fafbfc; }
+.nm-event { padding: 3px 0; word-break: break-all; }
+.nm-empty { color: #9ca3af; font-size: 13px; padding: 18px 0; text-align: center; }
+.nm-sw { width: 38px; height: 21px; border-radius: 999px; background: #1f2328; position: relative; cursor: pointer; flex-shrink: 0; border: none; }
+.nm-sw.off { background: #d8dbe0; }
+.nm-sw i { position: absolute; top: 2px; left: 19px; width: 17px; height: 17px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.15); transition: left .15s; }
 .nm-sw.off i { left: 2px; }
 .nm-remote .nm-row-plain { cursor: default; }
-.nm-seg { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: #6b7280; }
-.nm-seg.on { background: #1f2328; border-color: #1f2328; color: #fff; font-weight: 600; }
-.nm-eye { background: none; border: none; padding: 3px; cursor: pointer; display: inline-flex; align-items: center; color: #6b7280; border-radius: 6px; }
+.nm-seg { background: transparent; border: 1px solid #e5e7eb; border-radius: 8px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; color: #6b7280; }
+.nm-seg.on { background: #1f2328; border-color: #1f2328; color: #fff; font-weight: 500; }
+.nm-eye { background: none; border: none; padding: 3px; cursor: pointer; display: inline-flex; align-items: center; color: #9ca3af; border-radius: 6px; }
 .nm-eye:hover { color: #1f2328; background: #f3f4f6; }
-.nm-eye svg { width: 18px; height: 18px; display: block; }
-.nm-info { position: relative; cursor: help; color: #9ca3af; width: 22px; height: 22px; border: 1px solid #e5e7eb; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.nm-info:hover { color: #2563eb; border-color: #bfdbfe; }
-.nm-info svg { width: 13px; height: 13px; display: block; }
-.nm-info .nm-tip { display: none; position: absolute; top: 130%; right: -8px; width: 250px; background: #1f2328; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.7; padding: 8px 11px; border-radius: 8px; z-index: 30; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.nm-eye svg { width: 17px; height: 17px; display: block; }
+.nm-info { position: relative; cursor: help; color: #c3c8cf; width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.nm-info:hover { color: #2563eb; }
+.nm-info svg { width: 15px; height: 15px; display: block; }
+.nm-info .nm-tip { display: none; position: absolute; top: 135%; left: -6px; width: 240px; background: #1f2328; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.7; padding: 8px 11px; border-radius: 8px; z-index: 30; box-shadow: 0 4px 14px rgba(0,0,0,.18); text-align: left; }
 .nm-info:hover .nm-tip { display: block; }
+.nm-chk { font-size: 12.5px; margin-right: 12px; }
+.nm-chk.ok { color: #16a34a; }
+.nm-chk.bad { color: #dc2626; }
 `;
 
 // 密码显隐 = 小眼睛图标（无文字按钮）
@@ -82,6 +87,10 @@ const EYE_ON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const EYE_OFF = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 const COPY_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 const INFO_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+// 行内 ⓘ：紧跟标签文字，悬停浮窗说明——页面本体不放说明长文
+function infoTip(text) {
+  return `<span class="nm-info">${INFO_SVG}<span class="nm-tip">${text}</span></span>`;
+}
 
 // ---------- vanilla 渲染辅助 ----------
 
@@ -107,21 +116,20 @@ function renderRemoteDetail(container, initialMsg) {
         <div id="rc-urlrow"></div>
         <div id="rc-pwrow"></div>
         <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">飞书通知</span>
+        <div class="nm-row nm-row-plain"><span class="nm-label">飞书通知${infoTip("开启后选择群聊或私聊；链接变化时自动推送新地址和完整密码")}</span>
           <button class="nm-sw off" id="rc-ntfy"><i></i></button>
           <span id="rc-chrow" style="display:inline-flex;gap:6px;align-items:center"></span>
           <span style="flex:1"></span>
-          <span class="nm-info">${INFO_SVG}<span class="nm-tip">开启后选择群聊或私聊；链接变化时自动推送新地址和完整密码</span></span>
+          <span id="rc-testslot"></span>
         </div>
         <div id="rc-chform"></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">会话有效期</span>
-          <select class="nm-input" id="rc-days" style="flex:0 0 160px">
+        <div class="nm-row nm-row-plain"><span class="nm-label">会话有效期${infoTip("远程登录保持登录的天数，可选 1–30 天")}</span>
+          <select class="nm-input" id="rc-days" style="flex:0 0 120px">
             <option value="1">1 天</option><option value="3">3 天</option><option value="7">7 天</option>
             <option value="14">14 天</option><option value="30">30 天</option>
-          </select><span class="nm-desc">远程登录后的有效时长（不可永久）</span></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">自动重启</span>
-          <button class="nm-sw" id="rc-arestart"><i></i></button>
-          <span class="nm-desc">隧道进程意外退出时 5 秒内自动重拉</span></div>
+          </select></div>
+        <div class="nm-row nm-row-plain"><span class="nm-label">自动重启${infoTip("临时隧道进程意外退出后 5 秒内自动重拉")}</span>
+          <button class="nm-sw" id="rc-arestart"><i></i></button></div>
         <div class="nm-sec">环境检查</div>
         <div class="nm-events" id="rc-env">读取中…</div>
         <div class="nm-sec">事件</div>
@@ -189,40 +197,71 @@ function renderRemoteDetail(container, initialMsg) {
   function renderChannel() {
     const row = q("#rc-chrow");
     const ch = st.channel || "off";
-    if (ch === "off") { row.innerHTML = ""; q("#rc-chform").innerHTML = ""; return; }
+    if (ch === "off") { row.innerHTML = ""; q("#rc-testslot").innerHTML = ""; q("#rc-chform").innerHTML = ""; return; }
     row.innerHTML = [["group", "群聊"], ["dm", "私聊"]].map(([v, t2]) =>
-      `<button class="nm-seg${ch === v ? " on" : ""}" data-ch="${v}">${t2}</button>`).join("") +
-      `<span style="flex:1"></span><button class="nm-btn" id="rc-test">发送测试</button>`;
+      `<button class="nm-seg${ch === v ? " on" : ""}" data-ch="${v}">${t2}</button>`).join("");
     for (const b of row.querySelectorAll("[data-ch]")) {
       b.onclick = () => { if (b.dataset.ch !== ch) act("/rc-api/config", b.dataset.ch === "group" ? "已切到群聊" : "已切到私聊", { notifyChannel: b.dataset.ch }); };
     }
+    q("#rc-testslot").innerHTML = `<button class="nm-btn" id="rc-test">发送测试</button>`;
     const tb = q("#rc-test");
     if (tb) tb.onclick = () => act("/rc-api/test", "测试中…");
     renderChannelForm();
+  }
+
+  // 掩码输入：显示「前6位••••••」示意已配置；改动才保存，掩码原样不动时不提交
+  function bindMasked(input, mask, onDirty) {
+    input.dataset.mask = mask || "";
+    input.onfocus = () => { if (input.value && input.value === input.dataset.mask) input.value = ""; };
+    input.onblur = () => { if (!input.value.trim() && input.dataset.mask) input.value = input.dataset.mask; };
+    input.onchange = () => {
+      const v = input.value.trim();
+      if (!v || v === input.dataset.mask) { input.value = input.dataset.mask; return; }
+      onDirty(v);
+      input.dataset.mask = v.slice(0, 6) + "••••••";
+      input.value = input.dataset.mask;
+    };
+  }
+
+  // 配置体检：凭据有效 / im:message（发消息） / im:chat（拉群列表，群聊才需要）
+  async function runAppCheck() {
+    const box = q("#rc-appcheck");
+    if (!box) return;
+    box.innerHTML = `<span class="nm-chk" style="color:#9ca3af">检查中…</span>`;
+    try {
+      const r = await rcApi("/rc-api/appcheck");
+      if (!r.token) { box.innerHTML = `<span class="nm-chk bad">✗ 凭据无效：${nmEsc(r.error || "请检查 App ID / Secret")}</span>`; return; }
+      const item = (ok, label) => `<span class="nm-chk ${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${label}</span>`;
+      const ch = st.channel || "group";
+      let html = item(true, "凭据");
+      html += item(r.imMessage !== false, "im:message 发消息");
+      if (ch === "group") html += item(r.imChat !== false, "im:chat 拉群列表");
+      if (r.imMessage === false || (ch === "group" && r.imChat === false)) html += `<span class="nm-chk bad">缺权限：到开放平台开通后点重新检查</span>`;
+      box.innerHTML = html;
+    } catch (e) { box.innerHTML = `<span class="nm-chk bad">检查失败：${nmEsc(e.message)}</span>`; }
   }
 
   function renderChannelForm() {
     const ch = st.channel || "off";
     const form = q("#rc-chform");
     if (ch === "off") { form.innerHTML = ""; return; }
-    const appRow = `
-      <div class="nm-row nm-row-plain"><span class="nm-label">App ID</span><input class="nm-input" id="rc-appid" placeholder="cli_xxxx" value="${nmEsc(st.appId || "")}">
-        <span class="nm-label" style="min-width:70px">App Secret</span><input class="nm-input" id="rc-sec" type="password" placeholder="${st.hasAppSecret ? "已配置（留空不变）" : "app secret"}"></div>`;
+    const appRows = `
+      <div class="nm-row nm-row-plain"><span class="nm-label">App ID${infoTip("开放平台 → 凭证与基础信息里的 cli_ 开头 ID")}</span><input class="nm-input" id="rc-appid" placeholder="cli_xxxx" value="${nmEsc(st.appIdMask || "")}"></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">App Secret${infoTip("同一页面；只存本机凭据缝，不进仓库不进配置文件")}</span><input class="nm-input" id="rc-sec" type="password" placeholder="${st.appSecretMask ? "已配置 " + nmEsc(st.appSecretMask) + "，输入新值覆盖" : "app secret"}"></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">配置检查${infoTip(ch === "group" ? "群聊需要 im:chat + im:message 权限，且机器人已被拉进群" : "私聊需要 im:message 权限")}</span>
+        <span id="rc-appcheck" style="flex:1"></span><button class="nm-btn" id="rc-recheck">重新检查</button></div>`;
     if (ch === "group") {
-      // 群聊：应用拉群列表（chat_id）或群机器人 webhook，任选其一
       form.innerHTML = `
-        ${appRow}
-        <div class="nm-row nm-row-plain"><span class="nm-label">通知到群</span>
-          <select class="nm-input" id="rc-chat"><option value="">${st.chatId ? "已选：" + nmEsc(st.chatName || st.chatId) : "（点右侧按钮拉取）"}</option></select>
+        ${appRows}
+        <div class="nm-row nm-row-plain"><span class="nm-label">通知到群${infoTip("用应用身份发到选定的群；或用下面的群机器人 webhook，二选一")}</span>
+          <select class="nm-input" id="rc-chat"><option value="">${st.chatId ? "已选：" + nmEsc(st.chatName || st.chatId) : "（点右侧拉取）"}</option></select>
           <button class="nm-btn" id="rc-fetchchats">拉取群列表</button></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">或群机器人</span><input class="nm-input" id="rc-hook" placeholder="${st.hasWebhook ? "已配置（重新粘贴即覆盖）" : "粘贴群机器人 webhook 地址（不用 App ID，最简单）"}"></div>
-        <div class="nm-note">两种发法任选其一：上面填 App ID/Secret 后「拉取群列表」选群（机器人需已进群，应用需 im:chat + im:message 权限）；或在飞书群里加「自定义机器人」，把 webhook 地址粘到最下面——不需要 App ID 也不需要群 ID。改动即保存。</div>`;
+        <div class="nm-row nm-row-plain"><span class="nm-label">或群机器人${infoTip("群里加「自定义机器人」拿到 webhook 地址即可，不用 App ID")}</span><input class="nm-input" id="rc-hook" placeholder="${st.hasWebhook ? "已配置，重新粘贴即覆盖" : "webhook 地址（最简单，不用 App ID）"}"></div>`;
       wireAppRow(form);
       const chatSel = form.querySelector("#rc-chat");
-      const saveChat = (chatId, chatName) => act("/rc-api/config", chatId ? "已通知到群：" + chatName : "已取消群选择", { notifyChatId: chatId, notifyChatName: chatName });
       chatSel.onchange = () => {
         const opt = chatSel.options[chatSel.selectedIndex];
-        saveChat(chatSel.value, opt ? opt.textContent : "");
+        act("/rc-api/config", chatSel.value ? "已通知到群：" + (opt ? opt.textContent : "") : "已取消群选择", { notifyChatId: chatSel.value, notifyChatName: opt ? opt.textContent : "" });
       };
       form.querySelector("#rc-fetchchats").onclick = async () => {
         setMsg("拉取群列表中…");
@@ -238,21 +277,23 @@ function renderRemoteDetail(container, initialMsg) {
       hook.onchange = () => act("/rc-api/notify-secret", "webhook 地址已保存", { webhookUrl: hook.value.trim() || undefined });
       return;
     }
-    // 私聊：只能走应用 + open_id
+    // 私聊
     form.innerHTML = `
-      ${appRow}
-      <div class="nm-row nm-row-plain"><span class="nm-label">接收者 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx" value="${nmEsc(st.openId || "")}"></div>
-      <div class="nm-note">私聊只能走应用。open_id 无法自动获取（飞书不允许应用查用户）：在开放平台「消息日志」里能看到给你发过消息的 open_id。只是想收到通知的话，建议切回「群聊」。改动即保存。</div>`;
+      ${appRows}
+      <div class="nm-row nm-row-plain"><span class="nm-label">接收者${infoTip("open_id 或 union_id（on_ 开头）；开放平台「消息日志」里可查 open_id")}</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx / on_xxxx" value="${nmEsc(st.openIdMask || "")}"></div>`;
     wireAppRow(form);
     const oid = form.querySelector("#rc-oid");
-    oid.onchange = () => act("/rc-api/config", "open_id 已保存", { notifyOpenId: oid.value.trim() });
+    bindMasked(oid, st.openIdMask, (v) => act("/rc-api/config", "接收者已保存", { notifyOpenId: v }));
   }
 
   function wireAppRow(form) {
     const appId = form.querySelector("#rc-appid");
     const sec = form.querySelector("#rc-sec");
-    appId.onchange = () => act("/rc-api/config", "App ID 已保存", { notifyAppId: appId.value.trim() });
-    sec.onchange = () => act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: sec.value.trim() || undefined });
+    bindMasked(appId, st.appIdMask, (v) => act("/rc-api/config", "App ID 已保存", { notifyAppId: v }));
+    sec.onchange = () => { const v = sec.value.trim(); if (v) act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: v }); sec.value = ""; };
+    const rc = form.querySelector("#rc-recheck");
+    if (rc) rc.onclick = () => runAppCheck();
+    if (st.appIdMask && st.hasAppSecret) runAppCheck(); // 凭据齐了就自动体检
   }
 
   let msgTimer = null;
