@@ -163,7 +163,7 @@ function cardFor(title, color, bodyMd, url, note) {
 }
 async function sendWebhook(card) {
 	const hook = await getSecret(WEBHOOK_REF);
-	if (!hook) throw new Error("webhook URL 未配置（客户端页面 → 通知）");
+	if (!hook) throw new Error("还没有填 webhook 地址——在下方通知设置里粘贴");
 	const res = await fetch(hook, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -205,9 +205,12 @@ async function sendApp(card) {
 	})).json();
 	if (sendJson.code !== 0) throw new Error("发送失败 code " + sendJson.code + "：" + (sendJson.msg || "unknown") + "（常见原因：应用缺 im:message 发消息权限）");
 }
-async function notify(ctx, event, url) {
+async function sendNotify(ctx, event, url) {
 	const channel = cfg.notifyChannel || "off";
-	if (channel === "off") return;
+	if (channel === "off") return {
+		ok: false,
+		error: "通知通道未开启"
+	};
 	const [title, color] = {
 		started: ["远程访问已开启", "green"],
 		changed: ["访问地址已变化", "blue"],
@@ -226,9 +229,15 @@ async function notify(ctx, event, url) {
 		if (channel === "webhook") await sendWebhook(card);
 		else await sendApp(card);
 		pushEvent(event, "通知已发送");
+		return { ok: true };
 	} catch (e) {
-		pushEvent(event, "通知失败：" + e.message);
-		say(ctx, "warn", `[dsh-remote] notify failed: ${e.message}`);
+		const m = e.message;
+		pushEvent(event, "通知失败：" + m);
+		say(ctx, "warn", `[dsh-remote] notify failed: ${m}`);
+		return {
+			ok: false,
+			error: m
+		};
 	}
 }
 function fallbackSecrets() {
@@ -537,9 +546,12 @@ function startLoginServer(ctx) {
 						res.end(JSON.stringify({ error: "通知通道未启用（设置表单里选 webhook 或 app）" }));
 						return;
 					}
-					await notify(ctx, "test", currentUrl || null);
+					const r = await sendNotify(ctx, "test", currentUrl || null);
 					res.writeHead(200, { "Content-Type": "application/json" });
-					res.end(JSON.stringify({ ok: true }));
+					res.end(JSON.stringify(r.ok ? { ok: true } : {
+						ok: false,
+						error: r.error
+					}));
 					return;
 				}
 			}
@@ -755,7 +767,7 @@ function spawnCloudflared(ctx, isAlive) {
 			writeFileSync(join(RUN_DIR, "url"), m[0] + "\n");
 			say(ctx, "info", `[dsh-remote] tunnel ${changed ? "changed" : "up"}: ${m[0]}`);
 			pushEvent(changed ? "changed" : "started", m[0]);
-			notify(ctx, changed ? "changed" : "started", m[0]);
+			sendNotify(ctx, changed ? "changed" : "started", m[0]);
 		} else if (!announced && Date.now() - startedAt > URL_TIMEOUT_MS) {
 			clearInterval(urlTimer);
 			urlTimer = null;
@@ -776,7 +788,7 @@ function spawnCloudflared(ctx, isAlive) {
 			return;
 		}
 		pushEvent("down", "cloudflared 退出，5s 后自动重拉（quick tunnel 会自己死，事实 13）");
-		notify(ctx, "down", currentUrl || null);
+		sendNotify(ctx, "down", currentUrl || null);
 		timers.add(setTimeout(() => {
 			if (isAlive() && cfg.autoRestart !== false) spawnCloudflared(ctx, isAlive);
 		}, RESPAWN_DELAY_MS));

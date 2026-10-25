@@ -156,7 +156,7 @@ function cardFor(title: string, color: string, bodyMd: string, url: string | nul
 
 async function sendWebhook(card: any): Promise<void> {
   const hook = await getSecret(WEBHOOK_REF);
-  if (!hook) throw new Error("webhook URL 未配置（客户端页面 → 通知）");
+  if (!hook) throw new Error("还没有填 webhook 地址——在下方通知设置里粘贴");
   const res = await fetch(hook, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -189,9 +189,9 @@ async function sendApp(card: any): Promise<void> {
   if (sendJson.code !== 0) throw new Error("发送失败 code " + sendJson.code + "：" + (sendJson.msg || "unknown") + "（常见原因：应用缺 im:message 发消息权限）");
 }
 
-async function notify(ctx: AnyCtx, event: string, url: string | null) {
+async function sendNotify(ctx: AnyCtx, event: string, url: string | null): Promise<{ ok: boolean; error?: string }> {
   const channel = cfg.notifyChannel || "off";
-  if (channel === "off") return;
+  if (channel === "off") return { ok: false, error: "通知通道未开启" };
   const meta: Record<string, [string, string]> = {
     started: ["远程访问已开启", "green"], changed: ["访问地址已变化", "blue"],
     down: ["远程访问已断开", "red"], recovered: ["远程访问已恢复", "green"], test: ["测试通知", "grey"],
@@ -210,9 +210,12 @@ async function notify(ctx: AnyCtx, event: string, url: string | null) {
     if (channel === "webhook") await sendWebhook(card);
     else await sendApp(card);
     pushEvent(event, "通知已发送");
+    return { ok: true };
   } catch (e) {
-    pushEvent(event, "通知失败：" + (e as Error).message);
-    say(ctx, "warn", `[dsh-remote] notify failed: ${(e as Error).message}`);
+    const m = (e as Error).message;
+    pushEvent(event, "通知失败：" + m);
+    say(ctx, "warn", `[dsh-remote] notify failed: ${m}`);
+    return { ok: false, error: m };
   }
 }
 
@@ -486,9 +489,9 @@ function startLoginServer(ctx: AnyCtx): http.Server {
         if (req.method === "POST" && path === "/rc-api/test") {
           const channel = cfg.notifyChannel || "off";
           if (channel === "off") { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "通知通道未启用（设置表单里选 webhook 或 app）" })); return; }
-          await notify(ctx, "test", currentUrl || null); // 先发后答：结果看事件流（测试失败也进事件）
+          const r = await sendNotify(ctx, "test", currentUrl || null);
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true }));
+          res.end(JSON.stringify(r.ok ? { ok: true } : { ok: false, error: r.error }));
           return;
         }
       }
@@ -673,7 +676,7 @@ function spawnCloudflared(ctx: AnyCtx, isAlive: () => boolean): void {
       writeFileSync(join(RUN_DIR, "url"), m[0] + "\n");
       say(ctx, "info", `[dsh-remote] tunnel ${changed ? "changed" : "up"}: ${m[0]}`);
       pushEvent(changed ? "changed" : "started", m[0]);
-      void notify(ctx, changed ? "changed" : "started", m[0]);
+      void sendNotify(ctx, changed ? "changed" : "started", m[0]);
       // 不 clear：changed 检测需要持续监听（watchdog 语义）；disposer 统一清理
     } else if (!announced && Date.now() - startedAt > URL_TIMEOUT_MS) {
       clearInterval(urlTimer!); urlTimer = null;
@@ -688,7 +691,7 @@ function spawnCloudflared(ctx: AnyCtx, isAlive: () => boolean): void {
     if (!isAlive()) return;
     if (cfg.autoRestart === false) { pushEvent("down", "cloudflared 退出（自动重启已关闭）"); say(ctx, "warn", "[dsh-remote] cloudflared exited, auto-restart off"); return; }
     pushEvent("down", "cloudflared 退出，5s 后自动重拉（quick tunnel 会自己死，事实 13）");
-    void notify(ctx, "down", currentUrl || null);
+    void sendNotify(ctx, "down", currentUrl || null);
     timers.add(setTimeout(() => { if (isAlive() && cfg.autoRestart !== false) spawnCloudflared(ctx, isAlive); }, RESPAWN_DELAY_MS));
   });
 }

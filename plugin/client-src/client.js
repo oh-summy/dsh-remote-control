@@ -55,6 +55,8 @@ const NM_CSS = `
 .nm-sw i { position: absolute; top: 2px; left: 20px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
 .nm-sw.off i { left: 2px; }
 .nm-remote .nm-row-plain { cursor: default; }
+.nm-seg { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: #6b7280; }
+.nm-seg.on { background: #1f2328; border-color: #1f2328; color: #fff; font-weight: 600; }
 `;
 
 // ---------- vanilla 渲染辅助 ----------
@@ -76,42 +78,27 @@ function renderRemoteDetail(container, initialMsg) {
           <button class="nm-btn" id="rc-reveal">显示</button>
           <button class="nm-btn" id="rc-copypw">复制密码</button>
           <button class="nm-btn-d" id="rc-reset">重置密码</button></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">通知</span>
-          <select class="nm-input" id="rc-channel" style="flex:0 0 130px">
-            <option value="off">关闭</option><option value="webhook">群机器人 webhook</option><option value="app">飞书应用</option>
-          </select>
-          <button class="nm-btn" id="rc-test" style="display:none">发送测试</button></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">App ID</span><input class="nm-input" id="rc-appid" placeholder="cli_xxxx（飞书开放平台）"></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">App Secret</span><input class="nm-input" id="rc-sec" type="password" placeholder="已配置则留空">
-          <button class="nm-btn" id="rc-save">保存凭据</button></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">webhook URL</span><input class="nm-input" id="rc-hook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">接收者 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx（发送一条消息即可从调试台拿到）"></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">换址通知密码</span>
-          <select class="nm-input" id="rc-policy" style="flex:0 0 200px">
-            <option value="full">完整密码（换域后可自救）</option><option value="mask">仅掩码</option><option value="off">不发送</option>
-          </select></div>
+        <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
+        <div class="nm-sec">通知</div>
+        <div class="nm-row nm-row-plain" id="rc-chrow"></div>
+        <div id="rc-chform"></div>
         <div class="nm-row nm-row-plain"><span class="nm-label">自动重启</span>
           <button class="nm-sw" id="rc-arestart"><i></i></button>
           <span class="nm-desc">隧道进程意外退出时 5 秒内自动重拉</span></div>
-        <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
-        <div class="nm-note">改通道 / App ID / open_id 会重启隧道并产生新链接，密码随 started 通知推送。凭据写入 DSH 凭据缝，不落配置文件。open_id 获取：开放平台给应用加 im:message 权限后，让机器人给目标发一条消息即可从 API 调试台拿到。</div>
         <div class="nm-sec">环境检查</div>
         <div class="nm-events" id="rc-env">读取中…</div>
         <div class="nm-sec">事件</div>
         <div class="nm-events" id="rc-events">（暂无）</div>
       </div>
     </div>`;
-  const q = (s) => container.querySelector(s);
+  const q = (s2) => container.querySelector(s2);
+  let st = null;
   let shown = false;
+  let cleanupRemotePoll = null;
 
   async function refresh() {
-    let st;
-    try {
-      st = await rcApi("/rc-api/state");
-    } catch (e) {
-      q("#rc-runrow").innerHTML = `<span class="nm-dot-off">○ 管理面未就绪：${nmEsc(e.message)}</span>`;
-      return;
-    }
+    try { st = await rcApi("/rc-api/state"); }
+    catch (e) { q("#rc-runrow").innerHTML = `<span class="nm-dot-off">○ 管理面未就绪：${nmEsc(e.message)}</span>`; return; }
     q("#rc-runrow").innerHTML = st.running
       ? `<span class="nm-dot-on">● 隧道运行中</span><button class="nm-btn-d" id="rc-stop">停止远程访问</button>`
       : `<span class="nm-dot-off">○ 隧道已停止</span><button class="nm-btn-p" id="rc-start">启动远程访问</button>`;
@@ -125,26 +112,89 @@ function renderRemoteDetail(container, initialMsg) {
     const copyBtn = q("#rc-copy");
     if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText(st.url); setMsg("链接已复制"); };
     q("#rc-pw").textContent = shown ? st.password : st.passwordMask;
-    q("#rc-reveal").textContent = shown ? "隐藏" : "显示";
-    if (document.activeElement !== q("#rc-channel")) q("#rc-channel").value = st.channel;
-    q("#rc-test").style.display = st.channel === "off" ? "none" : "";
-    if (document.activeElement !== q("#rc-policy")) q("#rc-policy").value = st.policy;
     const ar = q("#rc-arestart");
     ar.className = "nm-sw" + (st.autoRestart ? "" : " off");
-    ar.onclick = () => act("/rc-api/config", { autoRestart: !st.autoRestart }, st.autoRestart ? "自动重启已关闭" : "自动重启已开启");
-    if (document.activeElement !== q("#rc-appid") && st.appId && !q("#rc-appid").value) q("#rc-appid").value = st.appId;
-    if (document.activeElement !== q("#rc-oid") && st.openId && !q("#rc-oid").value) q("#rc-oid").value = st.openId;
+    renderChannel();
     q("#rc-events").innerHTML = st.events.length === 0 ? "（暂无）" : st.events.map((e) => `<div class="nm-event">${nmEsc(e.time)} · ${nmEsc(e.type)} · ${nmEsc(e.detail)}</div>`).join("");
+  }
+
+  // ---------- 通知设置（按通道呈现不同字段，改动即保存） ----------
+  function renderChannel() {
+    const row = q("#rc-chrow");
+    const ch = st.channel || "off";
+    const seg = [["off", "关闭"], ["webhook", "群机器人"], ["app", "飞书应用"]];
+    row.innerHTML = seg.map(([v, t2]) =>
+      `<button class="nm-seg${ch === v ? " on" : ""}" data-ch="${v}">${t2}</button>`).join("") +
+      `<span style="flex:1"></span><button class="nm-btn" id="rc-test" ${ch === "off" ? "disabled style=\"opacity:.5\"" : ""}>发送测试</button>`;
+    for (const b of row.querySelectorAll("[data-ch]")) {
+      b.onclick = () => { if (b.dataset.ch !== ch) act("/rc-api/config", { notifyChannel: b.dataset.ch }, "通道已切换"); };
+    }
+    const tb = q("#rc-test");
+    if (tb) tb.onclick = () => act("/rc-api/test", "测试中…");
+    renderChannelForm();
+  }
+
+  function renderChannelForm() {
+    const ch = st.channel || "off";
+    const form = q("#rc-chform");
+    if (ch === "off") {
+      form.innerHTML = `<div class="nm-empty" style="text-align:left">通知已关闭。选择上面的通道后，这里会出现对应的配置项。</div>`;
+      return;
+    }
+    if (ch === "webhook") {
+      form.innerHTML = `
+        <div class="nm-row nm-row-plain"><span class="nm-label">webhook 地址</span><input class="nm-input" id="rc-hook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></div>
+        <div class="nm-note">群机器人不需要 App ID 和 open_id：在飞书群里添加「自定义机器人」拿到 webhook 地址粘贴 here，消息发到那个群。</div>`;
+      const inp = form.querySelector("#rc-hook");
+      inp.value = st.webhookUrl || "";
+      inp.onchange = () => act("/rc-api/notify-secret", { webhookUrl: inp.value.trim() || undefined }, "webhook 地址已保存");
+      return;
+    }
+    // app 通道
+    form.innerHTML = `
+      <div class="nm-row nm-row-plain"><span class="nm-label">App ID</span><input class="nm-input" id="rc-appid" placeholder="cli_xxxx" value="${nmEsc(st.appId || "")}">
+        <span class="nm-label" style="min-width:70px">App Secret</span><input class="nm-input" id="rc-sec" type="password" placeholder="${st.hasAppSecret ? "已配置（留空不变）" : "app secret"}"></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">接收者 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx" value="${nmEsc(st.openId || "")}"></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">换址通知密码</span>
+        <select class="nm-input" id="rc-policy" style="flex:0 0 220px">
+          <option value="full">完整密码（换链接后可自救）</option><option value="mask">仅前 4 位掩码</option><option value="off">不发送</option>
+        </select></div>
+      <div class="nm-row nm-row-plain"><button class="nm-btn-p" id="rc-saveapp">保存应用凭据与接收者</button>
+        <span class="nm-desc" style="align-self:center">open_id 无法自动获取（飞书不允许应用列出联系人）：让这个机器人给你发一条消息，即可在开放平台调试台看到你的 open_id。</span></div>`;
+    const appId = form.querySelector("#rc-appid");
+    const sec = form.querySelector("#rc-sec");
+    const oid = form.querySelector("#rc-oid");
+    const policy = form.querySelector("#rc-policy");
+    if (!appId.value && st.appId) appId.value = st.appId;
+    if (!oid.value && st.openId) oid.value = st.openId;
+    policy.value = st.policy || "full";
+    const save = () => act("/rc-api/config", {
+      notifyAppId: appId.value.trim() || undefined,
+      notifyOpenId: oid.value.trim() || undefined,
+    }, "已保存（隧道将按新配置重启）");
+    appId.onchange = save;
+    oid.onchange = save;
+    policy.onchange = () => act("/rc-api/config", { passwordPolicy: policy.value }, "密码档位已更新");
+    form.querySelector("#rc-saveapp").onclick = async () => {
+      setMsg("保存中…");
+      try {
+        await rcApi("/rc-api/notify-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appSecret: sec.value.trim() || undefined }) });
+        await act("/rc-api/config", { notifyAppId: appId.value.trim() || undefined, notifyOpenId: oid.value.trim() || undefined }, "应用凭据与接收者已保存");
+      } catch (e) { setMsg("失败：" + e.message); }
+    };
   }
 
   function setMsg(m) { const el = q("#rc-msg"); if (el) el.textContent = m; }
 
   async function act(path, pendingMsg, body) {
     setMsg(pendingMsg || "…");
-    try { await rcApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); setMsg("完成"); }
-    catch (e) { setMsg("失败：" + e.message); }
+    try {
+      const r = await rcApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+      setMsg(r && r.error ? "失败：" + r.error : (done2(r) || "完成"));
+    } catch (e) { setMsg("失败：" + (e.message || e)); }
     setTimeout(refresh, 400);
   }
+  function done2(r) { return r && r.detail ? undefined : (r && r.ok ? "完成" : undefined); }
 
   q("#rc-reveal").onclick = async () => {
     if (shown) { shown = false; return refresh(); }
@@ -152,31 +202,23 @@ function renderRemoteDetail(container, initialMsg) {
     catch (e) { setMsg("失败：" + e.message); }
   };
   q("#rc-copypw").onclick = async () => {
-    try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); await navigator.clipboard.writeText(r.password); setMsg("密码已复制（60s 内可再次显示/复制）"); }
+    try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); await navigator.clipboard.writeText(r.password); setMsg("密码已复制"); }
     catch (e) { setMsg("失败：" + e.message); }
   };
   q("#rc-reset").onclick = () => { if (confirm("重置密码？所有已登录会话将失效，新密码随 started 通知推送。")) act("/rc-api/reset", "密码已重置"); };
-  q("#rc-test").onclick = () => act("/rc-api/test", "测试已发送，结果看事件流");
-  q("#rc-save").onclick = () => act("/rc-api/notify-secret", "凭据已保存", {
-    webhookUrl: q("#rc-hook").value.trim() || undefined,
-    appSecret: q("#rc-sec").value.trim() || undefined,
-  });
-  q("#rc-channel").onchange = () => act("/rc-api/config", { notifyChannel: q("#rc-channel").value }, "通道已更新（隧道将按新配置重启）");
-  q("#rc-policy").onchange = () => act("/rc-api/config", { passwordPolicy: q("#rc-policy").value }, "密码档位已更新");
-  q("#rc-oid").onchange = () => { const v = q("#rc-oid").value.trim(); if (v) act("/rc-api/config", { notifyOpenId: v }, "open_id 已保存"); };
 
-  // 环境检查（二进制 / 凭据缝）
+  // 环境检查
   rcApi("/rc-api/envcheck").then((e) => {
-    const row = (name, ok, detail) => `<div class="nm-event">${ok ? "✓" : "✗"} ${name}${detail ? " — " + nmEsc(detail) : ""}</div>`;
+    const row2 = (name, ok, detail) => `<div class="nm-event">${ok ? "✓" : "✗"} ${name}${detail ? " — " + nmEsc(detail) : ""}</div>`;
     q("#rc-env").innerHTML =
-      row("cloudflared", e.cloudflared.found, e.cloudflared.version || e.cloudflared.path) +
-      row("caddy", e.caddy.found, e.caddy.version || e.caddy.path) +
-      row("DSH 会话密钥（免二次登录）", e.dshSecret, e.dshSecret ? "" : "未读取到——远程登录后需再过一次 DSH 校验");
+      row2("cloudflared", e.cloudflared.found, e.cloudflared.version || e.cloudflared.path) +
+      row2("caddy", e.caddy.found, e.caddy.version || e.caddy.path) +
+      row2("DSH 会话密钥（远程登录免二次校验）", e.dshSecret, e.dshSecret ? "" : "未读取到");
   }).catch((e) => { q("#rc-env").innerHTML = "环境检查失败：" + nmEsc(e.message); });
 
   refresh();
   const poll = setInterval(refresh, 5000);
-  return () => clearInterval(poll);
+  return () => { clearInterval(poll); if (cleanupRemotePoll) cleanupRemotePoll(); };
 }
 
 // ---------- Nano Market 主视图（列表 + 详情） ----------
@@ -226,7 +268,7 @@ function mountNanoMarket(container, pm) {
 
   function renderList() {
     // 官方包（@deepseek-ai/*）是 DSH 宿主自己的组成件，不属于市场；本机插件 = 其余 bundles
-    const mine = (bundles || []).filter((b) => !String(b.name).startsWith("@deepseek-ai/"));
+    const mine = (bundles || []).filter((b) => String(b.name).startsWith("@oh-summy/")); // 只有本项目的插件才进 Nano Market
     const mineRows = mine.map((b) => `
       <div class="nm-row" data-open="${nmEsc(b.name)}">
         <div class="nm-icon">🧩</div>
