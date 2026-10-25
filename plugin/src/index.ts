@@ -126,6 +126,7 @@ let caddyChild: ChildProcess | null = null;
 let cloudflaredChild: ChildProcess | null = null;
 let loginServer: http.Server | null = null;
 let urlTimer: NodeJS.Timeout | null = null;
+const timers = new Set<NodeJS.Timeout>(); // respawn 定时器登记：disposer 统一清理（第 2 轮自审 P0-1）
 const failCounts = new Map<string, { count: number; until: number }>();
 const revealAt = new Map<string, number>();
 
@@ -326,6 +327,7 @@ function startLoginServer(ctx: AnyCtx, isAlive: () => boolean): http.Server {
         }
         const count = (lock?.count ?? 0) + 1;
         failCounts.set(ip, { count, until: count >= LOGIN_MAX_FAILS ? Date.now() + LOGIN_LOCK_MS : 0 });
+        if (failCounts.size > 200) for (const [k, v] of failCounts) if (v.until < Date.now()) failCounts.delete(k); // 防慢泄漏
         pushEvent("auth", "登录失败（" + (count >= LOGIN_MAX_FAILS ? "已锁 5 分钟" : count + "/5") + "）");
         res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
         res.end("<meta charset='utf-8'>密码错误，<a href='/rc-login'>重试</a>");
@@ -385,8 +387,8 @@ function startLoginServer(ctx: AnyCtx, isAlive: () => boolean): http.Server {
         if (req.method === "POST" && path === "/rc-api/test") {
           const channel = cfg.notifyChannel || "off";
           if (channel === "off") { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "通知通道未启用（设置表单里选 webhook 或 app）" })); return; }
+          await notify(ctx, "test", currentUrl || null); // 先发后答：结果看事件流（测试失败也进事件）
           res.writeHead(200, { "Content-Type": "application/json" });
-          await notify(ctx, "test", currentUrl || null);
           res.end(JSON.stringify({ ok: true }));
           return;
         }
@@ -540,13 +542,9 @@ function renderCaddyfile(): string {
 	}
 
 	handle @api {
+		// 远端 /rc-api 的授权在插件侧 classify（cf-connecting-ip 存在=远端 → rc_session 校验）；
+		// cloudflared→Caddy 的 remote_ip 恒为 127.0.0.1，@localapi 恒先命中——内层不再分支。
 		handle @localapi {
-			reverse_proxy 127.0.0.1:${LOGIN_PORT}
-		}
-		handle @authed {
-			reverse_proxy 127.0.0.1:${LOGIN_PORT}
-		}
-		handle @authed-dsh {
 			reverse_proxy 127.0.0.1:${LOGIN_PORT}
 		}
 		handle {
@@ -603,7 +601,7 @@ export function apply(ctx: AnyCtx, config: Config = {}) {
         loginServer!.once("error", reject);
         loginServer!.listen(LOGIN_PORT, "127.0.0.1", () => resolve());
       });
-      if (!isAlive()) { loginServer!.close(); loginServer = null; return; }
+      if (!isAlive()) { try { loginServer!.close(); } catch { /* not listening */ } loginServer = null; return; }
       say(ctx, "info", `[dsh-remote] login/api listening on 127.0.0.1:${LOGIN_PORT}`);
       spawnCaddy(ctx, isAlive);
       spawnCloudflared(ctx, isAlive);
@@ -616,6 +614,8 @@ export function apply(ctx: AnyCtx, config: Config = {}) {
     return () => { // disposer
       dead = true;
       if (urlTimer) { clearInterval(urlTimer); urlTimer = null; }
+      for (const t of timers) clearTimeout(t);
+      timers.clear();
       try { if (caddyChild?.pid) process.kill(caddyChild.pid); } catch { /* gone */ }
       try { if (cloudflaredChild?.pid) process.kill(cloudflaredChild.pid); } catch { /* gone */ }
       try { loginServer?.close(); } catch { /* closed */ }

@@ -53,7 +53,7 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 4. launchd 不 source shell profile，且 `dsh` 的 shebang 依赖 PATH 里的 node——plist 必须注入 PATH 或直接用 node 绝对路径。
 5. KeepAlive 只有固定间隔重拉，无退避——接受，不自建退避逻辑。
 6. Caddy 必须重写 Host/Origin，否则过不了 DSH 的 browser-trust fence；登录上游要保住 `Cf-Connecting-Ip` 头（锁 IP 依赖）。
-7. `engines.dsh: ">=0.2.1-rc.2"` 装不上未来的 `0.2.2-rc.x`（semver 预发布语义）——用 DSH 自带 semver 包实测后定范围，rc 升级时同步放宽。
+7. `engines.dsh` 预发布语义：`>=0.2.1-rc.2` 会拒装 `0.2.2-rc.x`（node-semver 同 tuple 规则）——已实测并用放宽范围 `">=0.2.1-rc.2 || >=0.2.2-0"`（宿主 semver 六样本全过：0.2.1-rc.2/0.2.1/0.2.1-rc.3/0.2.2-rc.1/0.2.2/0.3.0）。
 8. 重置密码必须同时轮换 session.secret（旧 cookie 有 7 天 TTL）。
 9. 密码明文不能进 profile patch（config-editor 落盘 + `.bak` 备份扩散）——这就是走凭据缝的原因。
 10. 飞书发消息端点是 `im/v1/messages`（v4 是历史版本）。
@@ -67,6 +67,7 @@ Named Tunnel / 自定义域名（v2 再说）；SSH、文件传输、多用户�
 18. 宿主服务必须声明 `export const inject = ["credentials"]`，否则 `ctx.credentials` 访问被拒（"cannot get property without inject"）。
 19. 隧道 `--url` 必须指向 Caddy 门（4080）**绝不直连 DSH**；Caddy 的 `header_up Host` 必须是裸 `127.0.0.1:3080`（带 scheme 会改写 authority，fence 拒签）。
 20. 开发期事实：HMR 不感知 link: 包的代码/文件变化（只有 profile 层 patch 触发配置重组），**模块代码变更必须重启宿主**；运行时开关不受影响（发布后用户走 settings 表单）。
+21. 门的安全模型（第 1 轮自审定型）：`rc_session` 的值就是门令牌（Caddy 正则门与会话校验共用，服务端 timingSafeEq）；classify 判定 = cf-connecting-ip 存在即远端、Caddy 追加的 loopback XFF 仍算本机；CORS/Host 双白名单挡 drive-by 与 DNS rebinding；boot 的每个 await 后检查 fiber 生命旗标（防销毁后拉起）；reapOrphans 杀前核对进程名（防 PID 复用误杀）。
 
 ## 里程碑（怎么算完成）
 

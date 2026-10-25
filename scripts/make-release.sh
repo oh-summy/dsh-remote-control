@@ -27,7 +27,7 @@ rm -f "$OUT_DIR/$NAME.tar.gz" "$OUT_DIR/$NAME.tar.gz.sha256"
 echo "[make-release] 打包 $TAG ..."
 # git archive 白名单：只打 tracked 文件（etc/Caddyfile 是源文件，必须包含）
 git archive --format=tar --prefix="$NAME/" "$TAG" \
-  bin scripts etc docs \
+  bin scripts etc docs plugin \
   README.md README.zh-CN.md CONTRIBUTING.md CONTRIBUTING.zh-CN.md \
   LICENSE .gitignore .github/SECURITY.md \
   | tar -xf - -C "$OUT_DIR"
