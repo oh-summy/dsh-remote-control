@@ -145,11 +145,11 @@ function cardFor(title, color, lines, url, note) {
 		}]
 	});
 	elements.push({
-		tag: "note",
-		elements: [{
-			tag: "plain_text",
+		tag: "div",
+		text: {
+			tag: "lark_md",
 			content: note
-		}]
+		}
 	});
 	return {
 		header: {
@@ -240,7 +240,7 @@ async function sendNotify(ctx, event, url) {
 		"**访问密码**",
 		tier
 	];
-	const card = cardFor(title, color, lines, url, "dsh-remote By oh-summy · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
+	const card = cardFor(title, color, lines, url, "dsh-remote By [oh-summy](https://github.com/oh-summy) · " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN"));
 	try {
 		if (channel === "group") {
 			const hook = await getSecret(WEBHOOK_REF);
