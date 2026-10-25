@@ -40,7 +40,7 @@ const WEBHOOK_REF = credentialRef("DSH_REMOTE_WEBHOOK_URL");
 const APP_SECRET_REF = credentialRef("DSH_REMOTE_APP_SECRET");
 const inject = ["credentials"];
 const Config = z.object({
-	enabled: z.boolean().default(false).describe("启用远程访问（关闭即回收隧道；开启/改配置会产生新的临时链接）"),
+	enabled: z.boolean().default(false).describe("启用远程访问（关闭即回收隧道；开启产生新的临时链接）"),
 	cloudflaredPath: z.string().default("").describe("cloudflared 路径（留空自动探测）"),
 	caddyPath: z.string().default("").describe("caddy 路径（留空自动探测）"),
 	notifyChannel: z.enum([
@@ -49,7 +49,9 @@ const Config = z.object({
 		"app"
 	]).default("off").describe("飞书通知通道"),
 	notifyAppId: z.string().default("").describe("飞书 App ID（app 通道）"),
-	notifyOpenId: z.string().default("").describe("通知接收者 open_id（客户端页面有获取引导）"),
+	notifyOpenId: z.string().default("").describe("私聊通知接收者 open_id（群通知不需要，页面可拉群列表自动选）"),
+	notifyChatId: z.string().default("").describe("群通知 chat_id（页面「拉取群列表」自动填）"),
+	notifyChatName: z.string().default("").describe("群通知显示名（随 chat_id 保存）"),
 	passwordPolicy: z.enum([
 		"full",
 		"mask",
@@ -116,6 +118,8 @@ let caddyChild = null;
 let cloudflaredChild = null;
 let loginServer = null;
 let urlTimer = null;
+let stopping = false;
+let fiberAlive = null;
 const timers = /* @__PURE__ */ new Set();
 const failCounts = /* @__PURE__ */ new Map();
 const revealAt = /* @__PURE__ */ new Map();
@@ -176,11 +180,10 @@ async function sendWebhook(card) {
 	});
 	if (!res.ok) throw new Error("webhook HTTP " + res.status);
 }
-async function sendApp(card) {
+async function getTenantToken() {
 	const appId = cfg.notifyAppId || "";
 	const appSecret = await getSecret(APP_SECRET_REF);
-	if (!appId || !appSecret) throw new Error("App ID / App Secret 未配置（客户端页面 → 通知）");
-	if (!cfg.notifyOpenId) throw new Error("接收者 open_id 未配置");
+	if (!appId || !appSecret) throw new Error("App ID / App Secret 未配置（先在通知设置里填好）");
 	const tokenJson = await (await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -191,14 +194,21 @@ async function sendApp(card) {
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
 	})).json();
 	if (!tokenJson.tenant_access_token) throw new Error("凭据无效或权限缺失：" + (tokenJson.msg || "unknown"));
-	const sendJson = await (await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
+	return tokenJson.tenant_access_token;
+}
+async function sendApp(card) {
+	const receiveIdType = cfg.notifyChatId ? "chat_id" : "open_id";
+	const receiveId = cfg.notifyChatId || cfg.notifyOpenId;
+	if (!receiveId) throw new Error("接收者未配置：点「拉取群列表」选一个群（推荐），或填私聊 open_id");
+	const token = await getTenantToken();
+	const sendJson = await (await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			Authorization: "Bearer " + tokenJson.tenant_access_token
+			Authorization: "Bearer " + token
 		},
 		body: JSON.stringify({
-			receive_id: cfg.notifyOpenId,
+			receive_id: receiveId,
 			msg_type: "interactive",
 			content: JSON.stringify(card)
 		}),
@@ -448,6 +458,8 @@ function startLoginServer(ctx) {
 						hasWebhook: !!await getSecret(WEBHOOK_REF),
 						hasAppSecret: !!await getSecret(APP_SECRET_REF),
 						openId: cfg.notifyOpenId || "",
+						chatId: cfg.notifyChatId || "",
+						chatName: cfg.notifyChatName || "",
 						appId: cfg.notifyAppId || "",
 						events
 					}));
@@ -488,11 +500,13 @@ function startLoginServer(ctx) {
 				if (req.method === "POST" && path === "/rc-api/toggle") {
 					const target = !cfg.enabled;
 					try {
-						writeUserConfig({ enabled: target });
+						if (target) await startTunnel(ctx);
+						else stopTunnel(ctx);
 						cfg = {
 							...cfg,
 							enabled: target
 						};
+						saveSettings();
 						res.writeHead(200, { "Content-Type": "application/json" });
 						res.end(JSON.stringify({
 							ok: true,
@@ -504,21 +518,43 @@ function startLoginServer(ctx) {
 					}
 					return;
 				}
+				if (req.method === "GET" && path === "/rc-api/chats") {
+					try {
+						const token = await getTenantToken();
+						const chatsJson = await (await fetch("https://open.feishu.cn/open-apis/im/v1/chats?page_size=50", {
+							headers: { Authorization: "Bearer " + token },
+							signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+						})).json();
+						if (chatsJson.code !== 0) throw new Error("拉取失败 code " + chatsJson.code + "：" + (chatsJson.msg || "") + "（应用需要 im:chat 群组权限，且机器人要已被拉进群）");
+						const chats = (chatsJson.data?.items || []).map((c) => ({
+							chatId: c.chat_id,
+							name: c.name
+						}));
+						res.writeHead(200, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ chats }));
+					} catch (e) {
+						res.writeHead(400, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: e.message }));
+					}
+					return;
+				}
 				if (req.method === "POST" && path === "/rc-api/config") {
 					const json = JSON.parse(await readBody(req) || "{}");
 					const fields = {};
 					if (json.notifyChannel !== void 0) fields.notifyChannel = String(json.notifyChannel);
 					if (json.notifyAppId !== void 0) fields.notifyAppId = String(json.notifyAppId);
 					if (json.notifyOpenId !== void 0) fields.notifyOpenId = String(json.notifyOpenId);
+					if (json.notifyChatId !== void 0) fields.notifyChatId = String(json.notifyChatId);
+					if (json.notifyChatName !== void 0) fields.notifyChatName = String(json.notifyChatName);
 					if (json.passwordPolicy !== void 0) fields.passwordPolicy = String(json.passwordPolicy);
 					if (json.autoRestart !== void 0) fields.autoRestart = !!json.autoRestart;
 					if (json.sessionDays !== void 0) fields.sessionDays = Math.min(Math.max(parseInt(String(json.sessionDays), 10) || 7, 1), 30);
-					writeUserConfig(fields);
 					cfg = {
 						...cfg,
 						...fields
 					};
-					pushEvent("config", "设置已保存（隧道将按新配置重启）");
+					saveSettings();
+					pushEvent("config", "设置已保存（立即生效）");
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify({ ok: true }));
 					return;
@@ -619,73 +655,71 @@ function readPid(name) {
 	}
 }
 const PROFILE_PATCH = join(homedir(), ".dsh", "profiles", "web", "cordis.patch.yml");
-const USER_KEYS = [
-	"enabled",
-	"autoRestart",
-	"notifyChannel",
-	"notifyAppId",
-	"notifyOpenId",
-	"passwordPolicy",
-	"sessionDays",
-	"cloudflaredPath",
-	"caddyPath"
-];
+const SETTINGS_FILE = join(RUN_DIR, "settings.json");
 function readUserBlock() {
-	const lines = readFileSync(PROFILE_PATCH, "utf8").split("\n");
-	let start = -1;
-	for (let i = 0; i < lines.length; i++) if (lines[i].trim() === "- id: dsh-remote") {
-		start = i;
-		break;
+	try {
+		const lines = readFileSync(PROFILE_PATCH, "utf8").split("\n");
+		let start = -1;
+		for (let i = 0; i < lines.length; i++) if (lines[i].trim() === "- id: dsh-remote") {
+			start = i;
+			break;
+		}
+		if (start < 0) return null;
+		let end = lines.length;
+		for (let i = start + 1; i < lines.length; i++) if (/^- /.test(lines[i])) {
+			end = i;
+			break;
+		}
+		return {
+			lines,
+			start,
+			end,
+			text: lines.slice(start, end).join("\n")
+		};
+	} catch {
+		return null;
 	}
-	if (start < 0) return null;
-	let end = lines.length;
-	for (let i = start + 1; i < lines.length; i++) if (/^- /.test(lines[i])) {
-		end = i;
-		break;
-	}
-	return {
-		lines,
-		start,
-		end,
-		text: lines.slice(start, end).join("\n")
-	};
 }
 function blockValue(blockText, key) {
 	const m = new RegExp("^\\s+" + key + ":\\s*(.+)$", "m").exec(blockText);
 	return m ? m[1].trim().replace(/^["']|["']$/g, "") : null;
 }
-function writeUserConfig(fields) {
-	const cur = readUserBlock();
-	const prev = {};
-	if (cur) for (const k of USER_KEYS) {
-		const v = blockValue(cur.text, k);
-		if (v !== null) prev[k] = v === "true" ? true : v === "false" ? false : v;
+function loadSettings() {
+	try {
+		return JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
+	} catch {
+		const cur = readUserBlock();
+		const s = {};
+		if (cur) for (const k of [
+			"enabled",
+			"autoRestart",
+			"notifyChannel",
+			"notifyAppId",
+			"notifyOpenId",
+			"passwordPolicy",
+			"sessionDays"
+		]) {
+			const v = blockValue(cur.text, k);
+			if (v !== null) s[k] = v === "true" ? true : v === "false" ? false : k === "sessionDays" ? Number(v) : v;
+		}
+		return s;
 	}
-	const merged = { ...prev };
-	for (const [k, v] of Object.entries(fields)) if (v !== void 0) merged[k] = v;
-	merged.enabled = merged.enabled !== false;
-	merged.autoRestart = merged.autoRestart !== false;
-	const q = (v) => `"${String(v).replace(/"/g, "")}"`;
-	const block = [
-		"- id: dsh-remote",
-		"  config:",
-		`    enabled: ${merged.enabled === true}`,
-		`    autoRestart: ${merged.autoRestart === true}`,
-		merged.notifyChannel ? `    notifyChannel: ${String(merged.notifyChannel)}` : null,
-		merged.notifyAppId ? `    notifyAppId: ${q(merged.notifyAppId)}` : null,
-		merged.notifyOpenId ? `    notifyOpenId: ${q(merged.notifyOpenId)}` : null,
-		merged.passwordPolicy ? `    passwordPolicy: ${String(merged.passwordPolicy)}` : null,
-		merged.sessionDays ? `    sessionDays: ${Number(merged.sessionDays)}` : null,
-		merged.cloudflaredPath ? `    cloudflaredPath: ${q(merged.cloudflaredPath)}` : null,
-		merged.caddyPath ? `    caddyPath: ${q(merged.caddyPath)}` : null
-	].filter(Boolean).join("\n");
-	const s = readFileSync(PROFILE_PATCH, "utf8");
-	writeFileSync(PROFILE_PATCH + ".bak-dsh-remote", s);
-	if (cur) {
-		const lines = s.split("\n");
-		lines.splice(cur.start, cur.end - cur.start, block);
-		writeFileSync(PROFILE_PATCH, lines.join("\n"));
-	} else writeFileSync(PROFILE_PATCH, s.replace(/\s*$/, "") + "\n" + block + "\n");
+}
+function saveSettings() {
+	const s = {
+		enabled: cfg.enabled === true,
+		autoRestart: cfg.autoRestart !== false,
+		notifyChannel: cfg.notifyChannel || "off",
+		notifyAppId: cfg.notifyAppId || "",
+		notifyOpenId: cfg.notifyOpenId || "",
+		notifyChatId: cfg.notifyChatId || "",
+		notifyChatName: cfg.notifyChatName || "",
+		passwordPolicy: cfg.passwordPolicy || "full",
+		sessionDays: Number(cfg.sessionDays) || 7
+	};
+	try {
+		writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
+	} catch {}
 }
 async function reapOrphans(ctx) {
 	for (const name of ["caddy", "cloudflared"]) {
@@ -702,7 +736,8 @@ async function reapOrphans(ctx) {
 	if (!await waitPortFree(GATE_PORT)) throw new Error(`端口 ${GATE_PORT} 被非本插件进程占用（可能 v0.3.x 网关在跑：先 dsh-web stop）— fail loud，不抢端口`);
 	await waitPortFree(LOGIN_PORT);
 }
-function spawnCaddy(ctx, isAlive) {
+function spawnCaddy(ctx) {
+	const alive = () => fiberAlive?.() ?? false;
 	const caddyfile = join(RUN_DIR, "Caddyfile");
 	writeFileSync(caddyfile, renderCaddyfile());
 	caddyChild = spawn(findBinary(cfg, "caddy"), [
@@ -729,10 +764,11 @@ function spawnCaddy(ctx, isAlive) {
 		say(ctx, "error", "[dsh-remote] caddy error: " + e.message);
 	});
 	caddyChild.on("exit", () => {
-		if (!isAlive()) return;
+		if (stopping) return;
+		if (!alive()) return;
 		pushEvent("down", "caddy 退出，5s 后自动重拉");
 		timers.add(setTimeout(() => {
-			if (isAlive() && cfg.autoRestart !== false) spawnCaddy(ctx, isAlive);
+			if (alive() && cfg.autoRestart !== false) spawnCaddy(ctx);
 		}, RESPAWN_DELAY_MS));
 	});
 }
@@ -741,7 +777,8 @@ function restartCaddy(ctx) {
 		if (caddyChild?.pid) process.kill(caddyChild.pid);
 	} catch {}
 }
-function spawnCloudflared(ctx, isAlive) {
+function spawnCloudflared(ctx) {
+	const alive = () => fiberAlive?.() ?? false;
 	if (urlTimer) {
 		clearInterval(urlTimer);
 		urlTimer = null;
@@ -788,7 +825,8 @@ function spawnCloudflared(ctx, isAlive) {
 	});
 	cloudflaredChild.on("exit", () => {
 		closeSync(out);
-		if (!isAlive()) return;
+		if (stopping) return;
+		if (!alive()) return;
 		if (cfg.autoRestart === false) {
 			pushEvent("down", "cloudflared 退出（自动重启已关闭）");
 			say(ctx, "warn", "[dsh-remote] cloudflared exited, auto-restart off");
@@ -797,9 +835,47 @@ function spawnCloudflared(ctx, isAlive) {
 		pushEvent("down", "cloudflared 退出，5s 后自动重拉（quick tunnel 会自己死，事实 13）");
 		sendNotify(ctx, "down", currentUrl || null);
 		timers.add(setTimeout(() => {
-			if (isAlive() && cfg.autoRestart !== false) spawnCloudflared(ctx, isAlive);
+			if (alive() && cfg.autoRestart !== false) spawnCloudflared(ctx);
 		}, RESPAWN_DELAY_MS));
 	});
+}
+async function startTunnel(ctx) {
+	if (cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid)) return;
+	stopping = false;
+	await reapOrphans(ctx);
+	spawnCaddy(ctx);
+	spawnCloudflared(ctx);
+}
+function stopTunnel(ctx) {
+	if (!cloudflaredChild && !caddyChild) {
+		currentUrl = "";
+		return;
+	}
+	stopping = true;
+	if (urlTimer) {
+		clearInterval(urlTimer);
+		urlTimer = null;
+	}
+	for (const t of timers) clearTimeout(t);
+	timers.clear();
+	try {
+		if (caddyChild?.pid) process.kill(caddyChild.pid);
+	} catch {}
+	try {
+		if (cloudflaredChild?.pid) process.kill(cloudflaredChild.pid);
+	} catch {}
+	caddyChild = null;
+	cloudflaredChild = null;
+	currentUrl = "";
+	for (const f of [
+		"caddy.pid",
+		"cloudflared.pid",
+		"url"
+	]) try {
+		rmSync(join(RUN_DIR, f));
+	} catch {}
+	pushEvent("down", "远程访问已停止（链接已失效）");
+	say(ctx, "info", "[dsh-remote] tunnel + gate stopped by owner");
 }
 function renderCaddyfile() {
 	return `{
@@ -874,11 +950,15 @@ function renderCaddyfile() {
 }
 function apply(ctx, config = {}) {
 	globalThis.__dshRemoteCtx = ctx;
-	cfg = config;
+	cfg = {
+		...config,
+		...loadSettings()
+	};
 	mkdirSync(RUN_DIR, { recursive: true });
 	ctx.effect(() => {
 		let dead = false;
 		const isAlive = () => !dead;
+		fiberAlive = isAlive;
 		const boot = async () => {
 			await ensureSecrets(ctx);
 			if (!isAlive()) return;
@@ -905,8 +985,8 @@ function apply(ctx, config = {}) {
 			if (!cfg.enabled) return;
 			await reapOrphans(ctx);
 			if (!isAlive()) return;
-			spawnCaddy(ctx, isAlive);
-			spawnCloudflared(ctx, isAlive);
+			spawnCaddy(ctx);
+			spawnCloudflared(ctx);
 		};
 		boot().catch((e) => {
 			say(ctx, "error", "[dsh-remote] 启动失败：" + e.message);
@@ -914,6 +994,7 @@ function apply(ctx, config = {}) {
 		});
 		return () => {
 			dead = true;
+			fiberAlive = null;
 			if (urlTimer) {
 				clearInterval(urlTimer);
 				urlTimer = null;

@@ -91,10 +91,7 @@ function renderRemoteDetail(container, initialMsg) {
       <div class="nm-card">
         <div class="nm-row nm-row-plain" id="rc-runrow"><span class="nm-dot-off">○ 隧道状态读取中…</span></div>
         <div id="rc-urlrow"></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">访问密码</span><span class="nm-code" id="rc-pw">••••</span>
-          <button class="nm-eye" id="rc-reveal" title="显示密码" aria-label="显示密码">${EYE_ON}</button>
-          <button class="nm-btn" id="rc-copypw">复制密码</button>
-          <button class="nm-btn-d" id="rc-reset">重置密码</button></div>
+        <div id="rc-pwrow"></div>
         <div class="nm-msg" id="rc-msg">${nmEsc(initialMsg || "")}</div>
         <div class="nm-sec">通知</div>
         <div class="nm-row nm-row-plain" id="rc-chrow"></div>
@@ -115,10 +112,16 @@ function renderRemoteDetail(container, initialMsg) {
 
   async function refresh() {
     try { st = await rcApi("/rc-api/state"); }
-    catch (e) { q("#rc-runrow").innerHTML = `<span class="nm-dot-off">○ 管理面未就绪：${nmEsc(e.message)}</span>`; return; }
+    catch (e) {
+      // 条目重启窗口（改代码/装插件才会发生，设置不再触发）：轮询会自动恢复，这里给手动重试
+      q("#rc-runrow").innerHTML = `<span class="nm-dot-off">○ 管理面连接中…（${nmEsc(e.message)}，数秒内自动恢复）</span><button class="nm-btn" id="rc-retry">立即重试</button>`;
+      const rb = q("#rc-retry");
+      if (rb) rb.onclick = () => refresh();
+      return;
+    }
     q("#rc-runrow").innerHTML = st.running
       ? `<span class="nm-dot-on">● 隧道运行中</span><button class="nm-btn-d" id="rc-stop">停止远程访问</button>`
-      : `<span class="nm-dot-off">○ 隧道已停止</span><button class="nm-btn-p" id="rc-start">启动远程访问</button>`;
+      : `<span class="nm-dot-off">○ 隧道已停止——远程入口关闭，无链接也无需密码</span><button class="nm-btn-p" id="rc-start">启动远程访问</button>`;
     const stopBtn = q("#rc-stop");
     const startBtn = q("#rc-start");
     if (stopBtn) stopBtn.onclick = () => act("/rc-api/toggle", "正在停止…");
@@ -128,8 +131,22 @@ function renderRemoteDetail(container, initialMsg) {
       : "";
     const copyBtn = q("#rc-copy");
     if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText(st.url); setMsg("链接已复制"); };
-    q("#rc-pw").textContent = shown ? st.password : st.passwordMask;
-    setEye(shown);
+    // 密码行只在运行时存在：停止 = 没有链接，密码无从谈起（用户要求）
+    const pwrow = q("#rc-pwrow");
+    if (st.running) {
+      if (!pwrow.innerHTML) {
+        pwrow.innerHTML = `<div class="nm-row nm-row-plain"><span class="nm-label">访问密码</span><span class="nm-code" id="rc-pw">••••</span>
+          <button class="nm-eye" id="rc-reveal" title="显示密码" aria-label="显示密码">${shown ? EYE_OFF : EYE_ON}</button>
+          <button class="nm-btn" id="rc-copypw">复制密码</button>
+          <button class="nm-btn-d" id="rc-reset">重置密码</button></div>`;
+        wirePwRow();
+      }
+      q("#rc-pw").textContent = shown ? st.password : st.passwordMask;
+      setEye(shown);
+    } else if (pwrow.innerHTML) {
+      pwrow.innerHTML = "";
+      shown = false;
+    }
     const ar = q("#rc-arestart");
     ar.className = "nm-sw" + (st.autoRestart ? "" : " off");
     ar.onclick = () => act("/rc-api/config", st.autoRestart ? "正在关闭自动重启…" : "正在开启自动重启…", { autoRestart: !st.autoRestart });
@@ -165,17 +182,21 @@ function renderRemoteDetail(container, initialMsg) {
     if (ch === "webhook") {
       form.innerHTML = `
         <div class="nm-row nm-row-plain"><span class="nm-label">webhook 地址</span><input class="nm-input" id="rc-hook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"></div>
-        <div class="nm-note">群机器人不需要 App ID 和 open_id：在飞书群里添加「自定义机器人」拿到 webhook 地址粘贴到这里，消息发到那个群。</div>`;
+        <div class="nm-note">群机器人最简单：在飞书群里添加「自定义机器人」，把它给的 webhook 地址粘到这里就行——不需要 App ID，也不需要群 ID（地址本身就绑定了那个群）。改动即保存。</div>`;
       const inp = form.querySelector("#rc-hook");
       inp.value = st.webhookUrl || "";
       inp.onchange = () => act("/rc-api/notify-secret", "webhook 地址已保存", { webhookUrl: inp.value.trim() || undefined });
       return;
     }
-    // app 通道
+    // app 通道：群通知（chat_id 自动拉取）优先，私聊 open_id 可选
     form.innerHTML = `
       <div class="nm-row nm-row-plain"><span class="nm-label">App ID</span><input class="nm-input" id="rc-appid" placeholder="cli_xxxx" value="${nmEsc(st.appId || "")}">
         <span class="nm-label" style="min-width:70px">App Secret</span><input class="nm-input" id="rc-sec" type="password" placeholder="${st.hasAppSecret ? "已配置（留空不变）" : "app secret"}"></div>
-      <div class="nm-row nm-row-plain"><span class="nm-label">接收者 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx" value="${nmEsc(st.openId || "")}"></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">通知到群</span>
+        <select class="nm-input" id="rc-chat"><option value="">${st.chatId ? "已选：" + nmEsc(st.chatName || st.chatId) : "（点右侧按钮拉取）"}</option></select>
+        <button class="nm-btn" id="rc-fetchchats">拉取群列表</button></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">或私聊 open_id</span><input class="nm-input" id="rc-oid" placeholder="ou_xxxx（可留空，私聊才需要）" value="${nmEsc(st.openId || "")}"></div>
+      <div class="nm-note">推荐用群通知：拉取群列表选一个群即可（机器人需已被拉进群，应用需要 im:chat + im:message 权限）。私聊才需要 open_id——飞书不允许应用查用户，open_id 无法自动获取，只能在开放平台「消息日志」里看到；不折腾私聊就留空。所有改动即时保存。</div>
       <div class="nm-row nm-row-plain"><span class="nm-label">换址通知密码</span>
         <select class="nm-input" id="rc-policy" style="flex:0 0 220px">
           <option value="full">完整密码（换链接后可自救）</option><option value="mask">仅前 4 位掩码</option><option value="off">不发送</option>
@@ -184,31 +205,36 @@ function renderRemoteDetail(container, initialMsg) {
         <select class="nm-input" id="rc-days" style="flex:0 0 160px">
           <option value="1">1 天</option><option value="3">3 天</option><option value="7">7 天</option>
           <option value="14">14 天</option><option value="30">30 天</option>
-        </select><span class="nm-desc">远程登录后的有效时长（不可永久）</span></div>
-      <div class="nm-row nm-row-plain"><button class="nm-btn-p" id="rc-saveapp">保存应用凭据与接收者</button>
-        <span class="nm-desc" style="align-self:center">open_id 无法自动获取（飞书不允许应用列出联系人）：让这个机器人给你发一条消息，即可在开放平台调试台看到你的 open_id。</span></div>`;
+        </select><span class="nm-desc">远程登录后的有效时长（不可永久）</span></div>`;
     const appId = form.querySelector("#rc-appid");
     const sec = form.querySelector("#rc-sec");
     const oid = form.querySelector("#rc-oid");
+    const chatSel = form.querySelector("#rc-chat");
     const policy = form.querySelector("#rc-policy");
-    if (!appId.value && st.appId) appId.value = st.appId;
-    if (!oid.value && st.openId) oid.value = st.openId;
     policy.value = st.policy || "full";
     if (st.sessionDays) q("#rc-days").value = String(st.sessionDays);
-    const save = () => act("/rc-api/config", "已保存（隧道将按新配置重启）", {
-      notifyAppId: appId.value.trim() || undefined,
-      notifyOpenId: oid.value.trim() || undefined,
-      sessionDays: parseInt(q("#rc-days").value, 10) || undefined,
+    const saveIds = () => act("/rc-api/config", "已保存", {
+      notifyAppId: appId.value.trim(),
+      notifyOpenId: oid.value.trim(),
     });
-    appId.onchange = save;
-    oid.onchange = save;
+    appId.onchange = saveIds;
+    oid.onchange = saveIds;
+    sec.onchange = () => act("/rc-api/notify-secret", "App Secret 已保存", { appSecret: sec.value.trim() || undefined });
     policy.onchange = () => act("/rc-api/config", "密码档位已更新", { passwordPolicy: policy.value });
-    form.querySelector("#rc-saveapp").onclick = async () => {
-      setMsg("保存中…");
+    const saveChat = (chatId, chatName) => act("/rc-api/config", chatId ? "已通知到群：" + chatName : "已取消群通知（回到私聊 open_id）", { notifyChatId: chatId, notifyChatName: chatName });
+    chatSel.onchange = () => {
+      const opt = chatSel.options[chatSel.selectedIndex];
+      saveChat(chatSel.value, opt ? opt.textContent : "");
+    };
+    form.querySelector("#rc-fetchchats").onclick = async () => {
+      setMsg("拉取群列表中…");
       try {
-        await rcApi("/rc-api/notify-secret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appSecret: sec.value.trim() || undefined }) });
-        await act("/rc-api/config", "应用凭据与接收者已保存", { notifyAppId: appId.value.trim() || undefined, notifyOpenId: oid.value.trim() || undefined });
-      } catch (e) { setMsg("失败：" + e.message); }
+        const r = await rcApi("/rc-api/chats");
+        if (!r.chats || r.chats.length === 0) { setMsg("机器人还不在任何群里——先在飞书里把它拉进一个群再试"); return; }
+        chatSel.innerHTML = `<option value="">（不通知到群）</option>` + r.chats.map((c) => `<option value="${nmEsc(c.chatId)}">${nmEsc(c.name)}</option>`).join("");
+        if (st.chatId) chatSel.value = st.chatId;
+        setMsg("已拉到 " + r.chats.length + " 个群，选择后即保存");
+      } catch (e) { setMsg("失败：" + (e.message || e)); }
     };
   }
 
@@ -226,20 +252,25 @@ function renderRemoteDetail(container, initialMsg) {
 
   function setEye(on2) {
     const e = q("#rc-reveal");
+    if (!e) return;
     e.innerHTML = on2 ? EYE_OFF : EYE_ON;
     e.title = on2 ? "隐藏密码" : "显示密码";
     e.setAttribute("aria-label", on2 ? "隐藏密码" : "显示密码");
   }
-  q("#rc-reveal").onclick = async () => {
-    if (shown) { shown = false; return refresh(); }
-    try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); shown = true; q("#rc-pw").textContent = r.password; setEye(true); setTimeout(() => { shown = false; refresh(); }, 30000); }
-    catch (e) { setMsg("失败：" + e.message); }
-  };
-  q("#rc-copypw").onclick = async () => {
-    try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); await navigator.clipboard.writeText(r.password); setMsg("密码已复制"); }
-    catch (e) { setMsg("失败：" + e.message); }
-  };
-  q("#rc-reset").onclick = () => { if (confirm("重置密码？所有已登录会话将失效，新密码随 started 通知推送。")) act("/rc-api/reset", "密码已重置"); };
+  function wirePwRow() {
+    const eye = q("#rc-reveal");
+    if (!eye) return;
+    eye.onclick = async () => {
+      if (shown) { shown = false; return refresh(); }
+      try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); shown = true; q("#rc-pw").textContent = r.password; setEye(true); setTimeout(() => { shown = false; refresh(); }, 30000); }
+      catch (e) { setMsg("失败：" + e.message); }
+    };
+    q("#rc-copypw").onclick = async () => {
+      try { const r = await rcApi("/rc-api/reveal", { method: "POST" }); await navigator.clipboard.writeText(r.password); setMsg("密码已复制"); }
+      catch (e) { setMsg("失败：" + e.message); }
+    };
+    q("#rc-reset").onclick = () => { if (confirm("重置密码？所有已登录会话将失效，新密码随下次开启通知推送。")) act("/rc-api/reset", "密码已重置"); };
+  }
 
   // 环境检查
   rcApi("/rc-api/envcheck").then((e) => {
@@ -383,7 +414,7 @@ function mountNanoMarket(container, pm0) {
       <div class="nm-sec">本机插件（未上架）</div>
       <div class="nm-card">${localBody}</div>
       <div class="nm-msg">${nmEsc(msg)}</div>
-      <div class="nm-note">开关 = 插件的启用/停用，关了即不可用；点行进入管理。索引：https://oh-summy.github.io/dsh-nano-market/index.json</div>`;
+      <div class="nm-note">dsh-remote 行的开关 = 远程访问启停：关 = 链接立即失效（本页面不受影响）；点行进入管理。索引：https://oh-summy.github.io/dsh-nano-market/index.json</div>`;
     const retryBtn = shell.querySelector("#nm-retry");
     if (retryBtn) retryBtn.onclick = () => { msg = "正在重试…"; render(); load(); };
     for (const el of shell.querySelectorAll("[data-open]")) {

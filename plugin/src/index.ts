@@ -46,6 +46,8 @@ export interface Config {
   notifyChannel?: "off" | "webhook" | "app";
   notifyAppId?: string;
   notifyOpenId?: string;
+  notifyChatId?: string;
+  notifyChatName?: string;
   passwordPolicy?: "full" | "mask" | "off";
   sessionDays?: number;
 }
@@ -55,15 +57,17 @@ export interface Config {
 export const inject = ["credentials"];
 
 // settings form（Plugins 页自动表单）。Config = zod（官方先例 dsh-plugin-market/dsh-agent-loop）。
-// 全部非 volatile（事实 17）：每次配置变更 = 条目重启 = 隧道重建换址，full 密码档随 started 通知自救。
-// enabled 亦是：翻转 = 重启 = 开关语义。
+// 运行时设置不再写 profile 用户层（写 = HMR 条目重启 = 9091 窗口 + 隧道换址）：
+// 改存本插件自己的 settings.json，立即生效不重启；profile 只承载静态安装配置（路径类）。
 export const Config = z.object({
-  enabled: z.boolean().default(false).describe("启用远程访问（关闭即回收隧道；开启/改配置会产生新的临时链接）"),
+  enabled: z.boolean().default(false).describe("启用远程访问（关闭即回收隧道；开启产生新的临时链接）"),
   cloudflaredPath: z.string().default("").describe("cloudflared 路径（留空自动探测）"),
   caddyPath: z.string().default("").describe("caddy 路径（留空自动探测）"),
   notifyChannel: z.enum(["off", "webhook", "app"]).default("off").describe("飞书通知通道"),
   notifyAppId: z.string().default("").describe("飞书 App ID（app 通道）"),
-  notifyOpenId: z.string().default("").describe("通知接收者 open_id（客户端页面有获取引导）"),
+  notifyOpenId: z.string().default("").describe("私聊通知接收者 open_id（群通知不需要，页面可拉群列表自动选）"),
+  notifyChatId: z.string().default("").describe("群通知 chat_id（页面「拉取群列表」自动填）"),
+  notifyChatName: z.string().default("").describe("群通知显示名（随 chat_id 保存）"),
   passwordPolicy: z.enum(["full", "mask", "off"]).default("full").describe("URL 变化通知附带密码的档位（full 才能在换域后自救）"),
   autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）"),
   sessionDays: z.number().int().min(1).max(30).default(7).describe("远程会话有效天数（1-30，不可永久）"),
@@ -134,6 +138,8 @@ let caddyChild: ChildProcess | null = null;
 let cloudflaredChild: ChildProcess | null = null;
 let loginServer: http.Server | null = null;
 let urlTimer: NodeJS.Timeout | null = null;
+let stopping = false; // 命令式停止中：子进程 exit 回调不得当作崩溃重拉
+let fiberAlive: (() => boolean) | null = null; // 当前 fiber 的生命旗标（spawn 系函数经它判定是否续命）
 const timers = new Set<NodeJS.Timeout>(); // respawn 定时器登记：disposer 统一清理（第 2 轮自审 P0-1）
 const failCounts = new Map<string, { count: number; until: number }>();
 const revealAt = new Map<string, number>();
@@ -168,11 +174,10 @@ async function sendWebhook(card: any): Promise<void> {
   if (!res.ok) throw new Error("webhook HTTP " + res.status);
 }
 
-async function sendApp(card: any): Promise<void> {
+async function getTenantToken(): Promise<string> {
   const appId = cfg.notifyAppId || "";
   const appSecret = await getSecret(APP_SECRET_REF);
-  if (!appId || !appSecret) throw new Error("App ID / App Secret 未配置（客户端页面 → 通知）");
-  if (!cfg.notifyOpenId) throw new Error("接收者 open_id 未配置");
+  if (!appId || !appSecret) throw new Error("App ID / App Secret 未配置（先在通知设置里填好）");
   const tokenRes = await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -181,10 +186,19 @@ async function sendApp(card: any): Promise<void> {
   });
   const tokenJson = await tokenRes.json() as any;
   if (!tokenJson.tenant_access_token) throw new Error("凭据无效或权限缺失：" + (tokenJson.msg || "unknown"));
-  const sendRes = await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
+  return tokenJson.tenant_access_token as string;
+}
+
+async function sendApp(card: any): Promise<void> {
+  // 群通知（chat_id）优先——页面「拉取群列表」自动选；私聊才用 open_id（飞书不允许应用查用户，无法自动获取）
+  const receiveIdType = cfg.notifyChatId ? "chat_id" : "open_id";
+  const receiveId = cfg.notifyChatId || cfg.notifyOpenId;
+  if (!receiveId) throw new Error("接收者未配置：点「拉取群列表」选一个群（推荐），或填私聊 open_id");
+  const token = await getTenantToken();
+  const sendRes = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + tokenJson.tenant_access_token },
-    body: JSON.stringify({ receive_id: cfg.notifyOpenId, msg_type: "interactive", content: JSON.stringify(card) }),
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ receive_id: receiveId, msg_type: "interactive", content: JSON.stringify(card) }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const sendJson = await sendRes.json() as any;
@@ -407,6 +421,8 @@ function startLoginServer(ctx: AnyCtx): http.Server {
             hasWebhook: !!(await getSecret(WEBHOOK_REF)),
             hasAppSecret: !!(await getSecret(APP_SECRET_REF)),
             openId: cfg.notifyOpenId || "",
+            chatId: cfg.notifyChatId || "",
+            chatName: cfg.notifyChatName || "",
             appId: cfg.notifyAppId || "",
             events,
           }));
@@ -441,11 +457,14 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           return;
         }
         if (req.method === "POST" && path === "/rc-api/toggle") {
-          // 一键启停：改 profile 配置层（HMR 监视的文件）的 enabled，条目自动重启
+          // 命令式启停：不写 profile（写 = HMR 条目重启 = 9091 窗口 + 无谓换链接）。
+          // 管理面全程在线；stopped 时子进程 exit 回调按 stopping 旗标跳过重拉。
           const target = !cfg.enabled;
           try {
-            writeUserConfig({ enabled: target });
-            cfg = { ...cfg, enabled: target };
+            if (target) await startTunnel(ctx);
+            else stopTunnel(ctx);
+            cfg = { ...cfg, enabled: target } as Config;
+            saveSettings();
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, enabled: target }));
           } catch (e) {
@@ -454,19 +473,40 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           }
           return;
         }
+        if (req.method === "GET" && path === "/rc-api/chats") {
+          // 拉取机器人所在群列表（im/v1/chats）：「通知到群」可自动选择，绕开 open_id 不可自动获取的限制
+          try {
+            const token = await getTenantToken();
+            const chatsRes = await fetch("https://open.feishu.cn/open-apis/im/v1/chats?page_size=50", {
+              headers: { Authorization: "Bearer " + token },
+              signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+            });
+            const chatsJson = await chatsRes.json() as any;
+            if (chatsJson.code !== 0) throw new Error("拉取失败 code " + chatsJson.code + "：" + (chatsJson.msg || "") + "（应用需要 im:chat 群组权限，且机器人要已被拉进群）");
+            const chats = (chatsJson.data?.items || []).map((c: any) => ({ chatId: c.chat_id, name: c.name }));
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ chats }));
+          } catch (e) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: (e as Error).message }));
+          }
+          return;
+        }
         if (req.method === "POST" && path === "/rc-api/config") {
-          // 页面设置：通知通道 / App ID / open_id / 密码档位 / 自动重启
+          // 页面设置：存本插件 settings.json + 内存即时生效——不写 profile、不重启条目、不换链接
           const json = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
           const fields: Record<string, unknown> = {};
           if (json.notifyChannel !== undefined) fields.notifyChannel = String(json.notifyChannel);
           if (json.notifyAppId !== undefined) fields.notifyAppId = String(json.notifyAppId);
           if (json.notifyOpenId !== undefined) fields.notifyOpenId = String(json.notifyOpenId);
+          if (json.notifyChatId !== undefined) fields.notifyChatId = String(json.notifyChatId);
+          if (json.notifyChatName !== undefined) fields.notifyChatName = String(json.notifyChatName);
           if (json.passwordPolicy !== undefined) fields.passwordPolicy = String(json.passwordPolicy);
           if (json.autoRestart !== undefined) fields.autoRestart = !!json.autoRestart;
           if (json.sessionDays !== undefined) fields.sessionDays = Math.min(Math.max(parseInt(String(json.sessionDays), 10) || 7, 1), 30);
-          writeUserConfig(fields);
           cfg = { ...cfg, ...fields } as Config;
-          pushEvent("config", "设置已保存（隧道将按新配置重启）");
+          saveSettings();
+          pushEvent("config", "设置已保存（立即生效）");
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
           return;
@@ -545,39 +585,27 @@ function readPid(name: string): number {
   try { return Number(readFileSync(join(RUN_DIR, name + ".pid"), "utf8").trim()); } catch { return 0; }
 }
 
-// 用户层的 enabled 开关（profile patch 是 HMR 监视的文件，改完条目自动重启）。
-// bundle 层保持 enabled:false 的安全默认；用户的选择记录在用户层，跨重启持久。
+// 运行时设置存本插件自己的文件（RUN_DIR/settings.json）：写 profile 用户层会触发
+// HMR 条目重启（9091 窗口 + 隧道无谓换址），改自己的文件则立即生效零扰动。
+// profile patch 只承载静态安装配置；首次启动把旧 profile 块的值一次性迁移进来。
 const PROFILE_PATCH = join(homedir(), ".dsh", "profiles", "web", "cordis.patch.yml");
-
-function currentUserOverride(): boolean | null {
-  try {
-    const s = readFileSync(PROFILE_PATCH, "utf8");
-    const m = /- id: dsh-remote[\s\S]{0,240}?enabled:\s*(true|false)/.exec(s);
-    return m ? m[1] === "true" : null;
-  } catch { return null; }
-}
-
-function ensureUserOverride(enabled: boolean): void {
-  writeUserConfig({ enabled });
-}
-
-// 用户层配置写入：整个 dsh-remote override 块按当前值重建（未指定的键沿用原值）。
-// profile patch 是 HMR 监视的文件——写完条目自动以新配置重启。
-const USER_KEYS = ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "passwordPolicy", "sessionDays", "cloudflaredPath", "caddyPath"] as const;
+const SETTINGS_FILE = join(RUN_DIR, "settings.json");
 
 function readUserBlock(): { lines: string[]; start: number; end: number; text: string } | null {
-  const s = readFileSync(PROFILE_PATCH, "utf8");
-  const lines = s.split("\n");
-  let start = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === "- id: dsh-remote") { start = i; break; }
-  }
-  if (start < 0) return null;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^- /.test(lines[i])) { end = i; break; }
-  }
-  return { lines, start, end, text: lines.slice(start, end).join("\n") };
+  try {
+    const s = readFileSync(PROFILE_PATCH, "utf8");
+    const lines = s.split("\n");
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === "- id: dsh-remote") { start = i; break; }
+    }
+    if (start < 0) return null;
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (/^- /.test(lines[i])) { end = i; break; }
+    }
+    return { lines, start, end, text: lines.slice(start, end).join("\n") };
+  } catch { return null; }
 }
 
 function blockValue(blockText: string, key: string): string | null {
@@ -585,42 +613,36 @@ function blockValue(blockText: string, key: string): string | null {
   return m ? m[1].trim().replace(/^["']|["']$/g, "") : null;
 }
 
-function writeUserConfig(fields: Record<string, unknown>): void {
-  const cur = readUserBlock();
-  const prev: Record<string, unknown> = {};
-  if (cur) {
-    for (const k of USER_KEYS) {
-      const v = blockValue(cur.text, k);
-      if (v !== null) prev[k] = v === "true" ? true : v === "false" ? false : v;
+function loadSettings(): Config {
+  try {
+    return JSON.parse(readFileSync(SETTINGS_FILE, "utf8")) as Config;
+  } catch {
+    // 旧版本迁移：profile 用户层的运行时键搬进 settings.json（一次性）
+    const cur = readUserBlock();
+    const s: Record<string, unknown> = {};
+    if (cur) {
+      for (const k of ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "passwordPolicy", "sessionDays"] as const) {
+        const v = blockValue(cur.text, k);
+        if (v !== null) s[k] = v === "true" ? true : v === "false" ? false : (k === "sessionDays" ? Number(v) : v);
+      }
     }
+    return s as Config;
   }
-  const merged: Record<string, unknown> = { ...prev };
-  for (const [k, v] of Object.entries(fields)) if (v !== undefined) merged[k] = v;
-  merged.enabled = merged.enabled !== false;
-  merged.autoRestart = merged.autoRestart !== false;
-  const q = (v: unknown) => `"${String(v).replace(/"/g, "")}"`;
-  const block = [
-    "- id: dsh-remote",
-    "  config:",
-    `    enabled: ${merged.enabled === true}`,
-    `    autoRestart: ${merged.autoRestart === true}`,
-    merged.notifyChannel ? `    notifyChannel: ${String(merged.notifyChannel)}` : null,
-    merged.notifyAppId ? `    notifyAppId: ${q(merged.notifyAppId)}` : null,
-    merged.notifyOpenId ? `    notifyOpenId: ${q(merged.notifyOpenId)}` : null,
-    merged.passwordPolicy ? `    passwordPolicy: ${String(merged.passwordPolicy)}` : null,
-    merged.sessionDays ? `    sessionDays: ${Number(merged.sessionDays)}` : null,
-    merged.cloudflaredPath ? `    cloudflaredPath: ${q(merged.cloudflaredPath)}` : null,
-    merged.caddyPath ? `    caddyPath: ${q(merged.caddyPath)}` : null,
-  ].filter(Boolean).join("\n");
-  const s = readFileSync(PROFILE_PATCH, "utf8");
-  writeFileSync(PROFILE_PATCH + ".bak-dsh-remote", s);
-  if (cur) {
-    const lines = s.split("\n");
-    lines.splice(cur.start, cur.end - cur.start, block);
-    writeFileSync(PROFILE_PATCH, lines.join("\n"));
-  } else {
-    writeFileSync(PROFILE_PATCH, s.replace(/\s*$/, "") + "\n" + block + "\n");
-  }
+}
+
+function saveSettings(): void {
+  const s = {
+    enabled: cfg.enabled === true,
+    autoRestart: cfg.autoRestart !== false,
+    notifyChannel: cfg.notifyChannel || "off",
+    notifyAppId: cfg.notifyAppId || "",
+    notifyOpenId: cfg.notifyOpenId || "",
+    notifyChatId: cfg.notifyChatId || "",
+    notifyChatName: cfg.notifyChatName || "",
+    passwordPolicy: cfg.passwordPolicy || "full",
+    sessionDays: Number(cfg.sessionDays) || 7,
+  };
+  try { writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); } catch { /* best effort */ }
 }
 
 async function reapOrphans(ctx: AnyCtx): Promise<void> {
@@ -639,7 +661,8 @@ async function reapOrphans(ctx: AnyCtx): Promise<void> {
   await waitPortFree(LOGIN_PORT);
 }
 
-function spawnCaddy(ctx: AnyCtx, isAlive: () => boolean): void {
+function spawnCaddy(ctx: AnyCtx): void {
+  const alive = () => fiberAlive?.() ?? false;
   const caddyfile = join(RUN_DIR, "Caddyfile");
   writeFileSync(caddyfile, renderCaddyfile());
   caddyChild = spawn(findBinary(cfg, "caddy"), ["run", "--config", caddyfile], {
@@ -650,9 +673,10 @@ function spawnCaddy(ctx: AnyCtx, isAlive: () => boolean): void {
   writeFileSync(join(RUN_DIR, "caddy.pid"), String(caddyChild.pid));
   caddyChild.on("error", (e) => { pushEvent("down", "caddy 启动失败：" + e.message); say(ctx, "error", "[dsh-remote] caddy error: " + e.message); });
   caddyChild.on("exit", () => {
-    if (!isAlive()) return;
+    if (stopping) return; // 命令式停止：不是崩溃，不重拉
+    if (!alive()) return;
     pushEvent("down", "caddy 退出，5s 后自动重拉");
-    timers.add(setTimeout(() => { if (isAlive() && cfg.autoRestart !== false) spawnCaddy(ctx, isAlive); }, RESPAWN_DELAY_MS));
+    timers.add(setTimeout(() => { if (alive() && cfg.autoRestart !== false) spawnCaddy(ctx); }, RESPAWN_DELAY_MS));
   });
 }
 
@@ -661,7 +685,8 @@ function restartCaddy(ctx: AnyCtx): void {
   try { if (caddyChild?.pid) process.kill(caddyChild.pid); } catch { /* gone */ }
 }
 
-function spawnCloudflared(ctx: AnyCtx, isAlive: () => boolean): void {
+function spawnCloudflared(ctx: AnyCtx): void {
+  const alive = () => fiberAlive?.() ?? false;
   if (urlTimer) { clearInterval(urlTimer); urlTimer = null; }
   const logFile = join(RUN_DIR, "cloudflared.log");
   writeFileSync(logFile, ""); // fresh log：URL grep 只看本次
@@ -695,12 +720,37 @@ function spawnCloudflared(ctx: AnyCtx, isAlive: () => boolean): void {
   cloudflaredChild.on("error", (e) => { pushEvent("down", "cloudflared 启动失败：" + e.message); say(ctx, "error", "[dsh-remote] cloudflared error: " + e.message); });
   cloudflaredChild.on("exit", () => {
     closeSync(out);
-    if (!isAlive()) return;
+    if (stopping) return; // 命令式停止：不是崩溃，不重拉不通知
+    if (!alive()) return;
     if (cfg.autoRestart === false) { pushEvent("down", "cloudflared 退出（自动重启已关闭）"); say(ctx, "warn", "[dsh-remote] cloudflared exited, auto-restart off"); return; }
     pushEvent("down", "cloudflared 退出，5s 后自动重拉（quick tunnel 会自己死，事实 13）");
     void sendNotify(ctx, "down", currentUrl || null);
-    timers.add(setTimeout(() => { if (isAlive() && cfg.autoRestart !== false) spawnCloudflared(ctx, isAlive); }, RESPAWN_DELAY_MS));
+    timers.add(setTimeout(() => { if (alive() && cfg.autoRestart !== false) spawnCloudflared(ctx); }, RESPAWN_DELAY_MS));
   });
+}
+
+// ---------- 命令式启停（toggle 用；不动 profile = 不触发条目重启） ----------
+
+async function startTunnel(ctx: AnyCtx): Promise<void> {
+  if (cloudflaredChild?.pid && pidAlive(cloudflaredChild.pid)) return; // 已在跑（双击防抖）
+  stopping = false;
+  await reapOrphans(ctx);
+  spawnCaddy(ctx);
+  spawnCloudflared(ctx);
+}
+
+function stopTunnel(ctx: AnyCtx): void {
+  if (!cloudflaredChild && !caddyChild) { currentUrl = ""; return; }
+  stopping = true;
+  if (urlTimer) { clearInterval(urlTimer); urlTimer = null; }
+  for (const t of timers) clearTimeout(t);
+  timers.clear();
+  try { if (caddyChild?.pid) process.kill(caddyChild.pid); } catch { /* gone */ }
+  try { if (cloudflaredChild?.pid) process.kill(cloudflaredChild.pid); } catch { /* gone */ }
+  caddyChild = null; cloudflaredChild = null; currentUrl = "";
+  for (const f of ["caddy.pid", "cloudflared.pid", "url"]) { try { rmSync(join(RUN_DIR, f)); } catch { /* absent */ } }
+  pushEvent("down", "远程访问已停止（链接已失效）");
+  say(ctx, "info", "[dsh-remote] tunnel + gate stopped by owner");
 }
 
 function renderCaddyfile(): string {
@@ -781,16 +831,17 @@ function renderCaddyfile(): string {
 
 export function apply(ctx: AnyCtx, config: Config = {}) {
   (globalThis as any).__dshRemoteCtx = ctx; // secrets helpers need ctx without threading it everywhere
-  cfg = config;
+  cfg = { ...config, ...loadSettings() } as Config; // settings.json 是运行时事实源（profile 只留静态项）
   mkdirSync(RUN_DIR, { recursive: true });
 
   // 生命周期整体挂 ctx.effect（事实 14）：setup 现在跑，disposer 在 fiber 销毁时跑。
-  // dead/isAlive 是本条 fiber 的生命旗标——所有异步路径（boot 的 await 间隙、respawn 定时器）
-  // 都必须检查，否则 fiber 销毁后仍会拉起进程（第 1 轮自审 P1-2 的根因）。
+  // dead/isAlive 是本条 fiber 的生命旗标——所有异步路径（boot 的 await 间隙、respawn 定时器、
+  // 命令式启停）都必须检查，否则 fiber 销毁后仍会拉起进程（第 1 轮自审 P1-2 的根因）。
   // 管理 listener（登录页 + /rc-api）常驻：不随隧道启停——否则停止后连"启动按钮"都没有。
   ctx.effect(() => {
     let dead = false;
     const isAlive = () => !dead;
+    fiberAlive = isAlive;
 
     const boot = async () => {
       await ensureSecrets(ctx);
@@ -815,8 +866,8 @@ export function apply(ctx: AnyCtx, config: Config = {}) {
       if (!cfg.enabled) return; // idle：管理面在，隧道不在
       await reapOrphans(ctx);
       if (!isAlive()) return;
-      spawnCaddy(ctx, isAlive);
-      spawnCloudflared(ctx, isAlive);
+      spawnCaddy(ctx);
+      spawnCloudflared(ctx);
     };
     boot().catch((e) => {
       say(ctx, "error", "[dsh-remote] 启动失败：" + (e as Error).message);
@@ -825,6 +876,7 @@ export function apply(ctx: AnyCtx, config: Config = {}) {
 
     return () => { // disposer
       dead = true;
+      fiberAlive = null;
       if (urlTimer) { clearInterval(urlTimer); urlTimer = null; }
       for (const t of timers) clearTimeout(t);
       timers.clear();
