@@ -37,12 +37,12 @@ const NM_CSS = `
 .nm-sec { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: .05em; margin: 22px 0 6px; }
 .nm-card { background: #fff; border: 1px solid #eef0f3; border-radius: 14px; padding: 8px 22px; margin-bottom: 14px; }
 .nm-bare { background: #fff; border: 1px solid #eef0f3; border-radius: 14px; padding: 18px 22px; margin-bottom: 14px; }
-.nm-row { display: flex; align-items: center; gap: 10px; padding: 13px 0; cursor: pointer; }
+.nm-row { display: flex; align-items: center; gap: 10px; padding: 14px 0; cursor: pointer; }
 .nm-row-plain { cursor: default; }
-.nm-icon { width: 38px; height: 38px; border-radius: 10px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
-.nm-name { font-weight: 600; font-size: 14px; }
+.nm-lrow .nm-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nm-name { font-weight: 500; font-size: 13.5px; }
 .nm-ver { color: #9ca3af; font-size: 12px; margin-left: 6px; font-family: ui-monospace,monospace; }
-.nm-desc { color: #9ca3af; font-size: 12.5px; line-height: 1.5; }
+.nm-desc { color: #8b949e; font-size: 12px; line-height: 1.5; }
 .nm-badge { background: #eef2ff; color: #4f46e5; border-radius: 999px; padding: 1px 8px; font-size: 11px; margin-left: 6px; }
 .nm-badge-g { background: #f3f4f6; color: #9ca3af; border-radius: 999px; padding: 1px 8px; font-size: 11px; margin-left: 6px; }
 .nm-label { min-width: 96px; color: #6b7280; font-size: 13px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; }
@@ -62,9 +62,9 @@ const NM_CSS = `
 .nm-events { border: 1px solid #eef0f3; border-radius: 10px; padding: 10px 12px; max-height: 200px; overflow: auto; font-size: 12px; color: #9ca3af; background: #fafbfc; }
 .nm-event { padding: 3px 0; word-break: break-all; }
 .nm-empty { color: #9ca3af; font-size: 13px; padding: 18px 0; text-align: center; }
-.nm-sw { width: 38px; height: 21px; border-radius: 999px; background: #1f2328; position: relative; cursor: pointer; flex-shrink: 0; border: none; }
+.nm-sw { width: 30px; height: 17px; border-radius: 999px; background: #1f2328; position: relative; cursor: pointer; flex-shrink: 0; border: none; }
 .nm-sw.off { background: #d8dbe0; }
-.nm-sw i { position: absolute; top: 2px; left: 19px; width: 17px; height: 17px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.15); transition: left .15s; }
+.nm-sw i { position: absolute; top: 2px; left: 15px; width: 13px; height: 13px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.15); transition: left .15s; }
 .nm-sw.off i { left: 2px; }
 .nm-remote .nm-row-plain { cursor: default; }
 .nm-seg { background: transparent; border: 1px solid #e5e7eb; border-radius: 8px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; color: #6b7280; }
@@ -462,9 +462,8 @@ function mountNanoMarket(container, pm0) {
     const mineRows = mine.map((b) => {
       const on = b.name === SELF ? remoteRunning === true : !!b.enabled; // SELF 开关 = 隧道启停，其余 = 插件启停
       return `
-      <div class="nm-row" data-open="${nmEsc(b.name)}">
-        <div class="nm-icon">🧩</div>
-        <div style="flex:1">
+      <div class="nm-row nm-lrow" data-open="${nmEsc(b.name)}">
+        <div style="flex:1;min-width:0">
           <div><span class="nm-name">${nmEsc(title(b))}</span>${b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}${b.source && String(b.source).indexOf("link:") === 0 ? `<span class="nm-badge">开发中</span>` : ""}${b.error ? `<span class="nm-badge-g">加载错误</span>` : ""}</div>
           <div class="nm-desc">${nmEsc(text(b.meta && b.meta.description) || text(b.description) || b.name)}</div>
         </div>
@@ -476,9 +475,8 @@ function mountNanoMarket(container, pm0) {
       const installed = (bundles || []).some((b) => b.name === p.name);
       const ptitle = text(p.title) || p.name;
       const ver = p.versions && p.versions[0] ? p.versions[0].version : "";
-      return `<div class="nm-row nm-row-plain">
-        <div class="nm-icon">🧩</div>
-        <div style="flex:1">
+      return `<div class="nm-row nm-row-plain nm-lrow">
+        <div style="flex:1;min-width:0">
           <div><span class="nm-name">${nmEsc(ptitle)}</span>${ver ? `<span class="nm-ver">v${nmEsc(ver)}</span>` : ""}${installed ? `<span class="nm-badge">已安装</span>` : `<span class="nm-badge-g">未安装</span>`}</div>
           <div class="nm-desc">${nmEsc(text(p.description))}</div>
         </div>
@@ -497,8 +495,7 @@ function mountNanoMarket(container, pm0) {
       <div class="nm-card">${marketBody}</div>
       <div class="nm-sec">本机插件（未上架）</div>
       <div class="nm-card">${localBody}</div>
-      <div class="nm-msg">${nmEsc(msg)}</div>
-      <div class="nm-note">dsh-remote 行的开关 = 远程访问启停：关 = 链接立即失效（本页面不受影响）；点行进入管理。索引：https://oh-summy.github.io/dsh-nano-market/index.json</div>`;
+      <div class="nm-msg">${nmEsc(msg)}</div>`;
     const retryBtn = shell.querySelector("#nm-retry");
     if (retryBtn) retryBtn.onclick = () => { msg = "正在重试…"; render(); load(); };
     for (const el of shell.querySelectorAll("[data-open]")) {
@@ -534,7 +531,7 @@ function mountNanoMarket(container, pm0) {
     shell.innerHTML = `
       <button class="nm-btn" id="nm-back" style="margin-bottom:12px">← 返回 Nano Market</button>
       <div class="nm-bare">
-        <div class="nm-row nm-row-plain"><div class="nm-icon">🧩</div>
+        <div class="nm-row nm-row-plain">
           <div style="flex:1"><div><span class="nm-name">${nmEsc(b ? title(b) : selected)}</span>${b && b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}</div>
           <div class="nm-desc">${nmEsc(b ? ((b.meta && b.meta.description) || b.description || "") : "")}</div></div></div>
         <div class="nm-row nm-row-plain"><span class="nm-label">插件启用</span>
