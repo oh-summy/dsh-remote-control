@@ -182,7 +182,7 @@ This repo also ships the same capability as a native DSH plugin (`plugin/`): ena
 Settings → Built-in plugins → 远程访问 — and get a Cloudflare quick-tunnel link + password gate without touching a terminal.
 Design and hard-won implementation facts: [docs/dsh-plugin-design.md](docs/dsh-plugin-design.md).
 
-- Install (into a DSH profile): `dsh plugin --profile web add @oh-summy/dsh-remote` (published to the market at tag `v0.4.0`).
+- Install (into a DSH profile): `dsh plugin --profile web add @oh-summy/dsh-remote` (published to the market at tag `v0.1.0`).
 - The plugin supersedes the script gateway's watchdog/auth layers: it runs inside the DSH host, manages `cloudflared` + `caddy`
   itself, and registers the login page as its own listener. Enable one or the other, not both (the plugin fails loud if
   port 4080 is taken by the script gateway: `dsh-web stop` first).
