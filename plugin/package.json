@@ -22,7 +22,7 @@
     "cloudflare"
   ],
   "scripts": {
-    "build": "tsdown src/index.ts -d lib --format esm && node scripts/build-client.mjs",
+    "build": "tsc --noEmit && tsdown src/index.ts -d lib --format esm && node scripts/build-client.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dsh": {
