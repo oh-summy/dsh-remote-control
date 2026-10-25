@@ -55,7 +55,8 @@ const Config = z.object({
 		"mask",
 		"off"
 	]).default("full").describe("URL 变化通知附带密码的档位（full 才能在换域后自救）"),
-	autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）")
+	autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）"),
+	sessionDays: z.number().int().min(1).max(30).default(7).describe("远程会话有效天数（1-30，不可永久）")
 });
 function say(ctx, method, msg) {
 	const logger = ctx.logger;
@@ -290,11 +291,12 @@ function dshCookieParts(authority) {
 	const name = "dsh-auth-" + b64url(crypto.createHash("sha256").update(authority).digest());
 	const secretBytes = Buffer.from(dshSessionSecret, "base64url");
 	const now = Date.now();
+	const days = Math.min(Math.max(Number(cfg.sessionDays) || 7, 1), 30);
 	const body = b64url(Buffer.from(JSON.stringify({
 		version: 1,
 		authority,
 		issuedAt: now,
-		expiresAt: now + 6048e5
+		expiresAt: now + days * 86400 * 1e3
 	})));
 	const sig = b64url(crypto.createHmac("sha256", secretBytes).update(body).digest());
 	return {
@@ -403,8 +405,9 @@ function startLoginServer(ctx) {
 				if (timingSafeEq(String(new URLSearchParams(await readBody(req)).get("password") || ""), password)) {
 					failCounts.delete(ip);
 					const dsh = dshCookieParts(UPSTREAM_HOST);
-					const cookies = [`rc_session=${sessionSecret}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`];
-					if (dsh) cookies.push(`${dsh.name}=${dsh.value}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`);
+					const days = Math.min(Math.max(Number(cfg.sessionDays) || 7, 1), 30);
+					const cookies = [`rc_session=${sessionSecret}; HttpOnly; Path=/; Max-Age=${days * 86400}; SameSite=Lax`];
+					if (dsh) cookies.push(`${dsh.name}=${dsh.value}; HttpOnly; Path=/; Max-Age=${days * 86400}; SameSite=Lax`);
 					res.writeHead(302, {
 						Location: "/",
 						"Set-Cookie": cookies
@@ -440,6 +443,7 @@ function startLoginServer(ctx) {
 						passwordMask: password.slice(0, 4) + "••••••••",
 						policy: cfg.passwordPolicy || "full",
 						autoRestart: cfg.autoRestart !== false,
+						sessionDays: Number(cfg.sessionDays) || 7,
 						channel: cfg.notifyChannel || "off",
 						hasWebhook: !!await getSecret(WEBHOOK_REF),
 						hasAppSecret: !!await getSecret(APP_SECRET_REF),
@@ -508,6 +512,7 @@ function startLoginServer(ctx) {
 					if (json.notifyOpenId !== void 0) fields.notifyOpenId = String(json.notifyOpenId);
 					if (json.passwordPolicy !== void 0) fields.passwordPolicy = String(json.passwordPolicy);
 					if (json.autoRestart !== void 0) fields.autoRestart = !!json.autoRestart;
+					if (json.sessionDays !== void 0) fields.sessionDays = Math.min(Math.max(parseInt(String(json.sessionDays), 10) || 7, 1), 30);
 					writeUserConfig(fields);
 					cfg = {
 						...cfg,

@@ -47,6 +47,7 @@ export interface Config {
   notifyAppId?: string;
   notifyOpenId?: string;
   passwordPolicy?: "full" | "mask" | "off";
+  sessionDays?: number;
 }
 
 // cordis 服务注入声明：凭据缝必须显式声明，否则 ctx.credentials 访问被拒
@@ -65,6 +66,7 @@ export const Config = z.object({
   notifyOpenId: z.string().default("").describe("通知接收者 open_id（客户端页面有获取引导）"),
   passwordPolicy: z.enum(["full", "mask", "off"]).default("full").describe("URL 变化通知附带密码的档位（full 才能在换域后自救）"),
   autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）"),
+  sessionDays: z.number().int().min(1).max(30).default(7).describe("远程会话有效天数（1-30，不可永久）"),
 });
 
 // ---------- small utils ----------
@@ -267,7 +269,8 @@ function dshCookieParts(authority: string): { name: string; value: string } | nu
   const name = "dsh-auth-" + b64url(crypto.createHash("sha256").update(authority).digest());
   const secretBytes = Buffer.from(dshSessionSecret, "base64url");
   const now = Date.now();
-  const body = b64url(Buffer.from(JSON.stringify({ version: 1, authority, issuedAt: now, expiresAt: now + 7 * 86400 * 1000 })));
+  const days = Math.min(Math.max(Number(cfg.sessionDays) || 7, 1), 30);
+  const body = b64url(Buffer.from(JSON.stringify({ version: 1, authority, issuedAt: now, expiresAt: now + days * 86400 * 1000 })));
   const sig = b64url(crypto.createHmac("sha256", secretBytes).update(body).digest());
   return { name, value: "v1." + body + "." + sig };
 }
@@ -369,8 +372,9 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           failCounts.delete(ip);
           // rc_session 的值就是门令牌（v0.3.x 语义）：Caddy 正则门与会话校验共用它
           const dsh = dshCookieParts(UPSTREAM_HOST);
-          const cookies = [`rc_session=${sessionSecret}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`];
-          if (dsh) cookies.push(`${dsh.name}=${dsh.value}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`);
+          const days = Math.min(Math.max(Number(cfg.sessionDays) || 7, 1), 30);
+          const cookies = [`rc_session=${sessionSecret}; HttpOnly; Path=/; Max-Age=${days * 86400}; SameSite=Lax`];
+          if (dsh) cookies.push(`${dsh.name}=${dsh.value}; HttpOnly; Path=/; Max-Age=${days * 86400}; SameSite=Lax`);
           res.writeHead(302, { Location: "/", "Set-Cookie": cookies });
           res.end();
           return;
@@ -398,6 +402,7 @@ function startLoginServer(ctx: AnyCtx): http.Server {
             passwordMask: password.slice(0, 4) + "••••••••",
             policy: cfg.passwordPolicy || "full",
             autoRestart: cfg.autoRestart !== false,
+            sessionDays: Number(cfg.sessionDays) || 7,
             channel: cfg.notifyChannel || "off",
             hasWebhook: !!(await getSecret(WEBHOOK_REF)),
             hasAppSecret: !!(await getSecret(APP_SECRET_REF)),
@@ -458,6 +463,7 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           if (json.notifyOpenId !== undefined) fields.notifyOpenId = String(json.notifyOpenId);
           if (json.passwordPolicy !== undefined) fields.passwordPolicy = String(json.passwordPolicy);
           if (json.autoRestart !== undefined) fields.autoRestart = !!json.autoRestart;
+          if (json.sessionDays !== undefined) fields.sessionDays = Math.min(Math.max(parseInt(String(json.sessionDays), 10) || 7, 1), 30);
           writeUserConfig(fields);
           cfg = { ...cfg, ...fields } as Config;
           pushEvent("config", "设置已保存（隧道将按新配置重启）");

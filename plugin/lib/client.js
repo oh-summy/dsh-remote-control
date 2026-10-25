@@ -121,11 +121,14 @@ function renderRemoteDetail(container, initialMsg) {
     q("#rc-pw").textContent = shown ? st.password : st.passwordMask;
     const ar = q("#rc-arestart");
     ar.className = "nm-sw" + (st.autoRestart ? "" : " off");
-    renderChannel();
+    ar.onclick = () => act("/rc-api/config", { autoRestart: !st.autoRestart }, st.autoRestart ? "自动重启已关闭" : "自动重启已开启");
+    const chNow = st.channel || "off";
+    if (chNow !== lastChRendered || !q("#rc-chrow .nm-seg")) { lastChRendered = chNow; renderChannel(); } // 值没变不重建：避免轮询打断点击
     q("#rc-events").innerHTML = st.events.length === 0 ? "（暂无）" : st.events.map((e) => `<div class="nm-event">${nmEsc(e.time)} · ${nmEsc(e.type)} · ${nmEsc(e.detail)}</div>`).join("");
   }
 
   // ---------- 通知设置（按通道呈现不同字段，改动即保存） ----------
+  let lastChRendered = null;
   function renderChannel() {
     const row = q("#rc-chrow");
     const ch = st.channel || "off";
@@ -166,6 +169,11 @@ function renderRemoteDetail(container, initialMsg) {
         <select class="nm-input" id="rc-policy" style="flex:0 0 220px">
           <option value="full">完整密码（换链接后可自救）</option><option value="mask">仅前 4 位掩码</option><option value="off">不发送</option>
         </select></div>
+      <div class="nm-row nm-row-plain"><span class="nm-label">会话有效期</span>
+        <select class="nm-input" id="rc-days" style="flex:0 0 160px">
+          <option value="1">1 天</option><option value="3">3 天</option><option value="7">7 天</option>
+          <option value="14">14 天</option><option value="30">30 天</option>
+        </select><span class="nm-desc">远程登录后的有效时长（不可永久）</span></div>
       <div class="nm-row nm-row-plain"><button class="nm-btn-p" id="rc-saveapp">保存应用凭据与接收者</button>
         <span class="nm-desc" style="align-self:center">open_id 无法自动获取（飞书不允许应用列出联系人）：让这个机器人给你发一条消息，即可在开放平台调试台看到你的 open_id。</span></div>`;
     const appId = form.querySelector("#rc-appid");
@@ -175,9 +183,11 @@ function renderRemoteDetail(container, initialMsg) {
     if (!appId.value && st.appId) appId.value = st.appId;
     if (!oid.value && st.openId) oid.value = st.openId;
     policy.value = st.policy || "full";
+    if (st.sessionDays) q("#rc-days").value = String(st.sessionDays);
     const save = () => act("/rc-api/config", {
       notifyAppId: appId.value.trim() || undefined,
       notifyOpenId: oid.value.trim() || undefined,
+      sessionDays: parseInt(q("#rc-days").value, 10) || undefined,
     }, "已保存（隧道将按新配置重启）");
     appId.onchange = save;
     oid.onchange = save;
@@ -244,6 +254,15 @@ function mountNanoMarket(container, pm) {
       bundles = (r && (r.value ?? r.result)) || [];
       if (!Array.isArray(bundles)) bundles = [];
     } catch (e) { bundles = []; msg = "读取已安装插件失败：" + (e.message || e); }
+    if (bundles.length === 0) {
+      // remote 未就绪时可能拿到空列表：1.5s 后重试一次
+      await new Promise((r2) => setTimeout(r2, 1500));
+      try {
+        const r2 = await pm.listBundles();
+        const rows2 = (r2 && (r2.value ?? r2.result)) || [];
+        if (Array.isArray(rows2) && rows2.length > 0) bundles = rows2;
+      } catch { /* 保持空 */ }
+    }
     try {
       const j = await (await fetch(MARKET_INDEX, { signal: AbortSignal.timeout(10000) })).json();
       market = { plugins: j.plugins || [] };
@@ -283,7 +302,7 @@ function mountNanoMarket(container, pm) {
           <div><span class="nm-name">${nmEsc(title(b))}</span>${b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}${b.source && String(b.source).indexOf("link:") === 0 ? `<span class="nm-badge">开发中</span>` : ""}${b.error ? `<span class="nm-badge-g">加载错误</span>` : ""}</div>
           <div class="nm-desc">${nmEsc(text(b.meta && b.meta.description) || text(b.description) || b.name)}</div>
         </div>
-        <button class="nm-sw${b.enabled ? "" : " off"}" data-sw="${nmEsc(b.name)}" aria-label="${b.enabled ? "停用" : "启用"}"><i></i></button>
+        <button class="nm-sw${(b.name === SELF ? st.running : b.enabled) ? "" : " off"}" data-sw="${nmEsc(b.name)}" aria-label="${(b.name === SELF ? st.running : b.enabled) ? "停用" : "启用"}"><i></i></button>
       </div>`).join("");
     const plist = market.plugins || [];
     const mrows = plist.map((p) => {
@@ -314,9 +333,17 @@ function mountNanoMarket(container, pm) {
       el.addEventListener("click", () => { selected = el.getAttribute("data-open"); render(); });
     }
     for (const el of shell.querySelectorAll("[data-sw]")) {
-      el.addEventListener("click", (e) => {
+      el.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const b = (bundles || []).find((x) => x.name === el.getAttribute("data-sw"));
+        const name = el.getAttribute("data-sw");
+        if (name === SELF) {
+          // 本插件：开关 = 远程访问启停（不能卸载插件本体——这个页面自己会消失）
+          msg = st.running ? "正在停止…" : "正在启动…"; render();
+          try { await rcApi("/rc-api/toggle", { method: "POST" }); } catch (e2) { msg = "失败：" + (e2.message || e2); }
+          await load();
+          return;
+        }
+        const b = (bundles || []).find((x) => x.name === name);
         if (b) setBundle(b, !b.enabled);
       });
     }
@@ -336,12 +363,16 @@ function mountNanoMarket(container, pm) {
         <div class="nm-row nm-row-plain"><div class="nm-icon">🧩</div>
           <div style="flex:1"><div><span class="nm-name">${nmEsc(b ? title(b) : selected)}</span>${b && b.version ? `<span class="nm-ver">v${nmEsc(b.version)}</span>` : ""}</div>
           <div class="nm-desc">${nmEsc(b ? ((b.meta && b.meta.description) || b.description || "") : "")}</div></div></div>
-        <div class="nm-row nm-row-plain"><span class="nm-label">启用</span>
-          <button class="nm-sw${b && b.enabled ? "" : " off"}" id="nm-sw"><i></i></button>
-          <span class="nm-desc">${b && b.enabled ? "启用中——关闭后插件不可用" : "已停用"}</span></div>
+        <div class="nm-row nm-row-plain"><span class="nm-label">远程访问</span>
+          <button class="nm-sw${st.running ? "" : " off"}" id="nm-sw"><i></i></button>
+          <span class="nm-desc">${st.running ? "开启中——关闭后远程链接立即失效" : "已停止"}</span></div>
       </div>`;
     shell.querySelector("#nm-back").onclick = () => { selected = null; render(); };
-    shell.querySelector("#nm-sw").onclick = async () => { if (b) await setBundle(b, !b.enabled); };
+    shell.querySelector("#nm-sw").onclick = async () => {
+      msg = st.running ? "正在停止…" : "正在启动…"; render();
+      try { await rcApi("/rc-api/toggle", { method: "POST" }); } catch (e2) { msg = "失败：" + (e2.message || e2); }
+      await load();
+    };
   }
 
   load(); // 拉取已安装列表 + 市场索引
