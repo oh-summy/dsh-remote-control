@@ -5,5 +5,5 @@
     - id: dsh-remote
       name: "@oh-summy/dsh-remote"
       config:
-        enabled: true
+        enabled: false
         # cloudflaredPath: /full/path/to/cloudflared   # optional; defaults probe ~/.remote-control/bin then PATH

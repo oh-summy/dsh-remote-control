@@ -42,6 +42,7 @@ export interface Config {
   enabled?: boolean;
   cloudflaredPath?: string;
   caddyPath?: string;
+  autoRestart?: boolean;
   notifyChannel?: "off" | "webhook" | "app";
   notifyAppId?: string;
   notifyOpenId?: string;
@@ -63,6 +64,7 @@ export const Config = z.object({
   notifyAppId: z.string().default("").describe("飞书 App ID（app 通道）"),
   notifyOpenId: z.string().default("").describe("通知接收者 open_id（客户端页面有获取引导）"),
   passwordPolicy: z.enum(["full", "mask", "off"]).default("full").describe("URL 变化通知附带密码的档位（full 才能在换域后自救）"),
+  autoRestart: z.boolean().default(true).describe("隧道进程意外退出时自动重拉（默认开）"),
 });
 
 // ---------- small utils ----------
@@ -94,6 +96,10 @@ function hex(bytes: number): string {
 function timingSafeEq(a: string, b: string): boolean {
   const ab = Buffer.from(a), bb = Buffer.from(b);
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
+function htmlEsc(s: string): string {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 async function readBody(req: http.IncomingMessage, limit = BODY_LIMIT): Promise<string> {
@@ -298,16 +304,57 @@ function startLoginServer(ctx: AnyCtx): http.Server {
 
       if (req.method === "GET" && path === "/rc-login") {
         const lock = failCounts.get(ip);
-        const lockMsg = lock && lock.count >= LOGIN_MAX_FAILS && lock.until > Date.now()
-          ? `<p style="color:#c00">失败次数过多，${Math.ceil((lock.until - Date.now()) / 1000)}s 后重试</p>` : "";
+        const lockLeft = lock && lock.count >= LOGIN_MAX_FAILS ? Math.ceil((lock.until - Date.now()) / 1000) : 0;
+        const tunnelHost = String(req.headers.host || "").replace(/:\d+$/, "");
+        const lockMsg = lockLeft > 0
+          ? `<div class="chip err">尝试次数过多，${lockLeft}s 后可重试</div>`
+          : "";
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(`<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>DSH 远程访问</title></head>
-<body style="font-family:system-ui;max-width:380px;margin:12vh auto;padding:0 16px">
-<h2>DSH 远程访问</h2>${lockMsg}
-<form method="post" action="/rc-login"><input type="password" name="password" placeholder="访问密码" autofocus
- style="width:100%;padding:10px;font-size:16px;box-sizing:border-box" required>
-<button style="width:100%;padding:10px;margin-top:12px;font-size:16px" type="submit">进入</button></form>
-<p style="color:#888;font-size:13px">密码由本机 DSH 的「远程访问」插件生成（配置页可重置）。</p></body></html>`);
+        res.end(`<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH 远程访问</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(165deg, #0b1220 0%, #16233b 55%, #1b2c49 100%); color: #e6edf7;
+    font-family: system-ui,-apple-system,sans-serif; padding: 24px; }
+  .card { width: 100%; max-width: 380px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 16px; padding: 30px 28px 24px; backdrop-filter: blur(8px); }
+  .mark { font-size: 12px; letter-spacing: .14em; color: #8aa0bf; text-transform: uppercase; }
+  h1 { font-size: 21px; margin: 10px 0 4px; font-weight: 650; }
+  .sub { color: #8aa0bf; font-size: 13px; margin: 0 0 20px; line-height: 1.6; }
+  .host { display: inline-block; font-family: ui-monospace,monospace; font-size: 11.5px; color: #9fd0a8;
+    background: rgba(157,208,168,.09); border: 1px solid rgba(157,208,168,.25); border-radius: 999px;
+    padding: 3px 10px; margin-bottom: 18px; word-break: break-all; }
+  .tunnel { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; color: #5b7292; font-size: 11px; }
+  .tunnel .line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(143,163,191,.55), rgba(143,163,191,.15)); position: relative; }
+  .tunnel .line i { position: absolute; top: -2.5px; width: 6px; height: 6px; border-radius: 99px; background: #4f8cff; }
+  .tunnel .line i.a { left: 0; } .tunnel .line i.b { right: 0; animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) { .tunnel .line i.b { animation: none } }
+  input[type=password] { width: 100%; padding: 13px 14px; font-size: 16px; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.14); border-radius: 10px; color: #e6edf7; outline: none; }
+  input[type=password]:focus { border-color: #4f8cff; box-shadow: 0 0 0 3px rgba(79,140,255,.22); }
+  button { width: 100%; padding: 13px; margin-top: 14px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: #4f8cff; border: none; border-radius: 10px; color: #fff; }
+  button:focus-visible, input:focus-visible { outline: 2px solid #9cc2ff; outline-offset: 2px; }
+  .chip { border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 0 0 14px; line-height: 1.5; }
+  .chip.err { background: rgba(220,38,38,.12); border: 1px solid rgba(220,38,38,.35); color: #fca5a5; }
+  .foot { color: #5b7292; font-size: 12px; margin: 18px 0 0; line-height: 1.6; }
+</style></head>
+<body><div class="card">
+  <div class="mark">deepseek harness · 远程访问</div>
+  <h1>本机 DSH 的安全门</h1>
+  <p class="sub">输入访问密码即可使用这台机器上的 DSH。会话 7 天内有效。</p>
+  <span class="host">${htmlEsc(tunnelHost)}</span>
+  <div class="tunnel"><span>你</span><span class="line"><i class="a"></i><i class="b"></i></span><span>Cloudflare</span><span class="line"><i class="a"></i><i class="b"></i></span><span>本机 DSH</span></div>
+  ${lockMsg}
+  <form method="post" action="/rc-login">
+    <input type="password" name="password" placeholder="访问密码" autofocus autocomplete="current-password" required>
+    <button type="submit">进入 DSH</button>
+  </form>
+  <p class="foot">密码由本机 DSH 的「远程访问」插件生成，可在插件页面查看或重置。连续失败 5 次将锁定 5 分钟。</p>
+</div></body></html>`);
         return;
       }
 
@@ -347,6 +394,7 @@ function startLoginServer(ctx: AnyCtx): http.Server {
             url: currentUrl,
             passwordMask: password.slice(0, 4) + "••••••••",
             policy: cfg.passwordPolicy || "full",
+            autoRestart: cfg.autoRestart !== false,
             channel: cfg.notifyChannel || "off",
             hasWebhook: !!(await getSecret(WEBHOOK_REF)),
             hasAppSecret: !!(await getSecret(APP_SECRET_REF)),
@@ -388,13 +436,51 @@ function startLoginServer(ctx: AnyCtx): http.Server {
           // 一键启停：改 profile 配置层（HMR 监视的文件）的 enabled，条目自动重启
           const target = !cfg.enabled;
           try {
-            ensureUserOverride(target);
+            writeUserConfig({ enabled: target });
+            cfg = { ...cfg, enabled: target };
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, enabled: target }));
           } catch (e) {
             res.writeHead(500, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: (e as Error).message }));
           }
+          return;
+        }
+        if (req.method === "POST" && path === "/rc-api/config") {
+          // 页面设置：通知通道 / App ID / open_id / 密码档位 / 自动重启
+          const json = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+          const fields: Record<string, unknown> = {};
+          if (json.notifyChannel !== undefined) fields.notifyChannel = String(json.notifyChannel);
+          if (json.notifyAppId !== undefined) fields.notifyAppId = String(json.notifyAppId);
+          if (json.notifyOpenId !== undefined) fields.notifyOpenId = String(json.notifyOpenId);
+          if (json.passwordPolicy !== undefined) fields.passwordPolicy = String(json.passwordPolicy);
+          if (json.autoRestart !== undefined) fields.autoRestart = !!json.autoRestart;
+          writeUserConfig(fields);
+          cfg = { ...cfg, ...fields } as Config;
+          pushEvent("config", "设置已保存（隧道将按新配置重启）");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+        if (req.method === "GET" && path === "/rc-api/envcheck") {
+          const out: Record<string, unknown> = {};
+          for (const name of ["cloudflared", "caddy"] as const) {
+            const p = findBinary(cfg, name);
+            const absolute = p !== name;
+            let found = absolute && existsSync(p);
+            let version = "";
+            if (found) {
+              const r = spawnSync(p, ["--version"], { encoding: "utf8", timeout: 4000 });
+              version = (r.stdout || "").split("\n")[0].slice(0, 60);
+            } else {
+              const w = spawnSync("which", [name], { encoding: "utf8" });
+              found = w.status === 0;
+            }
+            out[name] = { found, path: p, version };
+          }
+          out.dshSecret = !!dshSessionSecret;
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(out));
           return;
         }
         if (req.method === "POST" && path === "/rc-api/test") {
@@ -463,15 +549,68 @@ function currentUserOverride(): boolean | null {
 }
 
 function ensureUserOverride(enabled: boolean): void {
-  let s = readFileSync(PROFILE_PATCH, "utf8");
-  const backup = s + `\n# (dsh-remote toggle backup ${Date.now()})\n`;
-  writeFileSync(PROFILE_PATCH + ".bak-dsh-remote", backup);
-  if (/- id: dsh-remote[\s\S]{0,240}?enabled:\s*(true|false)/.test(s)) {
-    s = s.replace(/(- id: dsh-remote[\s\S]{0,240}?enabled:\s*)(true|false)/, `$1${enabled}`);
-  } else {
-    s = s.replace(/\s*$/, "") + `\n- id: dsh-remote\n  config:\n    enabled: ${enabled}\n`;
+  writeUserConfig({ enabled });
+}
+
+// 用户层配置写入：整个 dsh-remote override 块按当前值重建（未指定的键沿用原值）。
+// profile patch 是 HMR 监视的文件——写完条目自动以新配置重启。
+const USER_KEYS = ["enabled", "autoRestart", "notifyChannel", "notifyAppId", "notifyOpenId", "passwordPolicy", "cloudflaredPath", "caddyPath"] as const;
+
+function readUserBlock(): { lines: string[]; start: number; end: number; text: string } | null {
+  const s = readFileSync(PROFILE_PATCH, "utf8");
+  const lines = s.split("\n");
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "- id: dsh-remote") { start = i; break; }
   }
-  writeFileSync(PROFILE_PATCH, s);
+  if (start < 0) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^- /.test(lines[i])) { end = i; break; }
+  }
+  return { lines, start, end, text: lines.slice(start, end).join("\n") };
+}
+
+function blockValue(blockText: string, key: string): string | null {
+  const m = new RegExp("^\\s+" + key + ":\\s*(.+)$", "m").exec(blockText);
+  return m ? m[1].trim().replace(/^["']|["']$/g, "") : null;
+}
+
+function writeUserConfig(fields: Record<string, unknown>): void {
+  const cur = readUserBlock();
+  const prev: Record<string, unknown> = {};
+  if (cur) {
+    for (const k of USER_KEYS) {
+      const v = blockValue(cur.text, k);
+      if (v !== null) prev[k] = v === "true" ? true : v === "false" ? false : v;
+    }
+  }
+  const merged: Record<string, unknown> = { ...prev };
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined) merged[k] = v;
+  merged.enabled = merged.enabled !== false;
+  merged.autoRestart = merged.autoRestart !== false;
+  const q = (v: unknown) => `"${String(v).replace(/"/g, "")}"`;
+  const block = [
+    "- id: dsh-remote",
+    "  config:",
+    `    enabled: ${merged.enabled === true}`,
+    `    autoRestart: ${merged.autoRestart === true}`,
+    merged.notifyChannel ? `    notifyChannel: ${String(merged.notifyChannel)}` : null,
+    merged.notifyAppId ? `    notifyAppId: ${q(merged.notifyAppId)}` : null,
+    merged.notifyOpenId ? `    notifyOpenId: ${q(merged.notifyOpenId)}` : null,
+    merged.passwordPolicy ? `    passwordPolicy: ${String(merged.passwordPolicy)}` : null,
+    merged.cloudflaredPath ? `    cloudflaredPath: ${q(merged.cloudflaredPath)}` : null,
+    merged.caddyPath ? `    caddyPath: ${q(merged.caddyPath)}` : null,
+  ].filter(Boolean).join("\n");
+  const s = readFileSync(PROFILE_PATCH, "utf8");
+  writeFileSync(PROFILE_PATCH + ".bak-dsh-remote", s);
+  if (cur) {
+    const lines = s.split("\n");
+    lines.splice(cur.start, cur.end - cur.start, block);
+    writeFileSync(PROFILE_PATCH, lines.join("\n"));
+  } else {
+    writeFileSync(PROFILE_PATCH, s.replace(/\s*$/, "") + "\n" + block + "\n");
+  }
 }
 
 async function reapOrphans(ctx: AnyCtx): Promise<void> {
@@ -503,7 +642,7 @@ function spawnCaddy(ctx: AnyCtx, isAlive: () => boolean): void {
   caddyChild.on("exit", () => {
     if (!isAlive()) return;
     pushEvent("down", "caddy 退出，5s 后自动重拉");
-    timers.add(setTimeout(() => { if (isAlive()) spawnCaddy(ctx, isAlive); }, RESPAWN_DELAY_MS));
+    timers.add(setTimeout(() => { if (isAlive() && cfg.autoRestart !== false) spawnCaddy(ctx, isAlive); }, RESPAWN_DELAY_MS));
   });
 }
 
@@ -547,9 +686,10 @@ function spawnCloudflared(ctx: AnyCtx, isAlive: () => boolean): void {
   cloudflaredChild.on("exit", () => {
     closeSync(out);
     if (!isAlive()) return;
+    if (cfg.autoRestart === false) { pushEvent("down", "cloudflared 退出（自动重启已关闭）"); say(ctx, "warn", "[dsh-remote] cloudflared exited, auto-restart off"); return; }
     pushEvent("down", "cloudflared 退出，5s 后自动重拉（quick tunnel 会自己死，事实 13）");
     void notify(ctx, "down", currentUrl || null);
-    timers.add(setTimeout(() => { if (isAlive()) spawnCloudflared(ctx, isAlive); }, RESPAWN_DELAY_MS));
+    timers.add(setTimeout(() => { if (isAlive() && cfg.autoRestart !== false) spawnCloudflared(ctx, isAlive); }, RESPAWN_DELAY_MS));
   });
 }
 
@@ -591,6 +731,11 @@ function renderCaddyfile(): string {
 
 	handle @authed {
 		reverse_proxy ${UPSTREAM} {
+			# 过期/无效的 dsh-auth cookie：DSH 回 401/403 → 送回登录页（杜绝死路 403）
+			@fence status 401 403
+			handle_response @fence {
+				error 401 "fence"
+			}
 			header_up Host ${UPSTREAM_HOST}
 			header_up Origin http://${UPSTREAM_HOST}
 		}
@@ -598,6 +743,10 @@ function renderCaddyfile(): string {
 
 	handle @authed-dsh {
 		reverse_proxy ${UPSTREAM} {
+			@fence status 401 403
+			handle_response @fence {
+				error 401 "fence"
+			}
 			header_up Host ${UPSTREAM_HOST}
 			header_up Origin http://${UPSTREAM_HOST}
 		}
@@ -606,6 +755,13 @@ function renderCaddyfile(): string {
 	handle {
 		header Location /rc-login
 		respond 302
+	}
+
+	handle_errors {
+		handle {
+			header Location /rc-login
+			respond 302
+		}
 	}
 }
 `;
